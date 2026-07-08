@@ -18,6 +18,8 @@ declare -A SKILL_TYPE=(
   ["flaky-test-fix"]="loop"
   ["lint-and-fix"]="loop"
   ["dependency-update"]="loop"
+  ["qcl-engine"]="procedural"
+  ["budget-watchdog"]="loop"
 )
 declare -A SKILL_CATEGORY=(
   ["deploy-studio"]="devops"
@@ -27,6 +29,7 @@ declare -A SKILL_CATEGORY=(
   ["lint-and-fix"]="qa"
   ["dependency-update"]="devops"
   ["qcl-engine"]="qa"
+  ["budget-watchdog"]="qa"
 )
 DEFAULT_TYPE="procedural"
 DEFAULT_CATEGORY="general"
