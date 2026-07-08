@@ -26,6 +26,7 @@ declare -A SKILL_CATEGORY=(
   ["flaky-test-fix"]="qa"
   ["lint-and-fix"]="qa"
   ["dependency-update"]="devops"
+  ["qcl-engine"]="qa"
 )
 DEFAULT_TYPE="procedural"
 DEFAULT_CATEGORY="general"
