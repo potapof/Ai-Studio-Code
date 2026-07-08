@@ -20,6 +20,7 @@ declare -A SKILL_TYPE=(
   ["dependency-update"]="loop"
   ["qcl-engine"]="procedural"
   ["budget-watchdog"]="loop"
+  ["holix-archivist"]="procedural"
 )
 declare -A SKILL_CATEGORY=(
   ["deploy-studio"]="devops"
@@ -30,6 +31,7 @@ declare -A SKILL_CATEGORY=(
   ["dependency-update"]="devops"
   ["qcl-engine"]="qa"
   ["budget-watchdog"]="qa"
+  ["holix-archivist"]="general"
 )
 DEFAULT_TYPE="procedural"
 DEFAULT_CATEGORY="general"
