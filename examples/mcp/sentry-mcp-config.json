@@ -1,0 +1,86 @@
+{
+  "_comment": "Конфиг Sentry MCP-сервера для 'Студии программирования' v2.0. Подключение через stdio (python -m mcp_server_sentry). Используется для чтения нерешённых инцидентов, анализа stacktrace, управления релизами.",
+  "_architecture": "Sentry — источник данных о production-ошибках. Hermes анализирует нерешённые инциденты и может создавать задачи на исправление в Loop Engineering.",
+  "server": {
+    "name": "sentry",
+    "version": "2.0.0",
+    "description": "Sentry MCP-сервер для мониторинга production-ошибок: список инцидентов, stacktrace, релизы",
+    "transport": "stdio",
+    "command": "python",
+    "args": ["-m", "mcp_server_sentry"],
+    "env": {
+      "SENTRY_DSN": "${SENTRY_DSN}",
+      "SENTRY_API_TOKEN": "${SENTRY_API_TOKEN}"
+    }
+  },
+  "tools": [
+    {
+      "name": "list_unresolved_issues",
+      "description": "Список нерешённых инцидентов в проекте. Поддерживает фильтрацию по окружению, уровню, времени последнего события.",
+      "params": {
+        "project": "string (обязательный, slug проекта в Sentry)",
+        "environment": "string (опциональный, например production)",
+        "level": "string (опциональный: fatal|error|warning|info|debug)",
+        "sort": "string (опциональный: date|freq|new, по умолчанию freq — по частоте)",
+        "limit": "integer (опциональный, по умолчанию 20)"
+      },
+      "returns": "array of { id, title, level, count, userCount, firstSeen, lastSeen, shortId }"
+    },
+    {
+      "name": "get_issue_details",
+      "description": "Полная информация об инциденте: метаданные, теги, частота, затронутые пользователи.",
+      "params": {
+        "issue_id": "string (обязательный)"
+      },
+      "returns": "object { id, title, level, status, count, userCount, firstSeen, lastSeen, tags, assignedTo, project }"
+    },
+    {
+      "name": "get_event_stacktrace",
+      "description": "Получение stacktrace последнего (или указанного) события инцидента. Используется Hermes'ом для поиска релевантных знаний в SOA через analyze_stack_trace.",
+      "params": {
+        "issue_id": "string (обязательный)",
+        "event_id": "string (опциональный, по умолчанию последнее событие)"
+      },
+      "returns": "object { event_id, message, stacktrace, frames, exception, context }"
+    },
+    {
+      "name": "resolve_issue",
+      "description": "Отметка инцидента как решённого. Используется Hermes'ом после успешного слияния PR, исправившего ошибку.",
+      "params": {
+        "issue_id": "string (обязательный)",
+        "resolution": "string (опциональный: resolved|ignored, по умолчанию resolved)"
+      },
+      "returns": "object { id, status }"
+    },
+    {
+      "name": "create_release",
+      "description": "Создание нового релиза в Sentry. Используется Hermes'ом при мерже PR в main — Sentry получает версию для отслеживания новых ошибок относительно релиза.",
+      "params": {
+        "version": "string (обязательный, например git SHA или semver)",
+        "project": "string (обязательный)",
+        "url": "string (опциональный, ссылка на PR/коммит)",
+        "commits": "array (опциональный, список коммитов в релизе)"
+      },
+      "returns": "object { version, url, projects }"
+    }
+  ],
+  "permissions": {
+    "_comment": "Доступ к Sentry только у Hermes. Чтение инцидентов, анализ stacktrace, управление релизами — всё централизованно.",
+    "hermes": {
+      "access": "all",
+      "tools": ["list_unresolved_issues", "get_issue_details", "get_event_stacktrace", "resolve_issue", "create_release"]
+    }
+  },
+  "rate_limits": {
+    "_comment": "Sentry API лимиты: 100 запросов в минуту для большинства эндпоинтов.",
+    "requests_per_minute": 60,
+    "concurrent_requests": 3
+  },
+  "security": {
+    "dsn_in_env": true,
+    "api_token_in_env": true,
+    "_token_note": "SENTRY_DSN и SENTRY_API_TOKEN хранятся в переменных окружения. Маскируются в логах.",
+    "sanitize_stacktraces": true,
+    "_sanitize_note": "Перед логированием stacktrace секреты (sk-*, ghp_*, xox*, пароли) автоматически маскируются."
+  }
+}

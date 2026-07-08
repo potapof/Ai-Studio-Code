@@ -1,0 +1,46 @@
+# ============================================================================
+# squid-whitelist.txt
+# ============================================================================
+# Whitelist доменов для Squid egress-proxy в "Студии программирования" v2.0.
+#
+# Формат: один домен на строку, поддерживаются wildcard через *.
+# Пример: .example.com или *.example.com — оба варианта валидны для Squid.
+#
+# Категории доменов в v2.0:
+#   1. LLM-провайдеры (deepseek, openai, anthropic)
+#   2. Stack Overflow for Agents + API Stack Exchange (НОВОЕ в v2.0)
+#   3. GitHub (github.com, api.github.com, raw пользовательского контента)
+#   4. Мессенджеры для уведомлений (slack, telegram)
+#   5. Sentry (мониторинг ошибок)
+#   6. Репозитории пакетов (PyPI, npmjs)
+# ============================================================================
+
+# --- 1. LLM-провайдеры ---
+api.deepseek.com
+api.openai.com
+api.anthropic.com
+
+# --- 2. Stack Overflow for Agents (OAuth 2.1) и API Stack Exchange ---
+mcp.stackoverflow.com
+stackoverflow.com
+api.stackexchange.com
+
+# --- 3. GitHub ---
+github.com
+api.github.com
+*.githubusercontent.com
+
+# --- 4. Мессенджеры для уведомлений ---
+hooks.slack.com
+api.telegram.org
+
+# --- 5. Sentry (мониторинг ошибок) ---
+sentry.io
+*.ingest.sentry.io
+
+# --- 6. Репозитории пакетов ---
+pypi.org
+*.pypi.org
+files.pythonhosted.org
+registry.npmjs.org
+*.npmjs.org

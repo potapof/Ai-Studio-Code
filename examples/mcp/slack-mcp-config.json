@@ -1,0 +1,93 @@
+{
+  "_comment": "Конфиг Slack MCP-сервера для 'Студии программирования' v2.0. Подключение через stdio (python -m mcp_server_slack). Используется для уведомлений о loop-завершениях, эскалациях, недельных отчётах.",
+  "_architecture": "Slack — опциональный канал уведомлений. Hermes отправляет сообщения о результатах loop-ов и эскалациях. Не используется для управления кодом или БД.",
+  "server": {
+    "name": "slack",
+    "version": "2.0.0",
+    "description": "Slack MCP-сервер для уведомлений: loop-завершения, эскалации, недельные отчёты",
+    "transport": "stdio",
+    "command": "python",
+    "args": ["-m", "mcp_server_slack"],
+    "env": {
+      "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+      "SLACK_CHANNEL_ID": "${SLACK_CHANNEL_ID}"
+    }
+  },
+  "tools": [
+    {
+      "name": "post_message",
+      "description": "Отправка произвольного сообщения в Slack-канал. Используется для отладочных уведомлений и статус-апдейтов.",
+      "params": {
+        "channel": "string (опциональный, по умолчанию из SLACK_CHANNEL_ID)",
+        "text": "string (обязательный, текст сообщения, поддерживает markdown)",
+        "blocks": "array (опциональный, Slack Block Kit для rich-сообщений)",
+        "thread_ts": "string (опциональный, для ответа в треде)"
+      },
+      "returns": "object { ok, channel, ts }"
+    },
+    {
+      "name": "post_loop_completion",
+      "description": "Структурированное уведомление о завершении loop-а. Включает verdict, cost, duration, ссылку на PR (если PASS) или issue (если NEEDS_HUMAN).",
+      "params": {
+        "loop_id": "string (обязательный)",
+        "verdict": "string (обязательный: PASS|FAIL|NEEDS_HUMAN)",
+        "task_description": "string (обязательный)",
+        "iterations_count": "integer (обязательный)",
+        "tokens_used": "integer (обязательный)",
+        "cost_usd": "number (обязательный)",
+        "duration_seconds": "integer (обязательный)",
+        "pr_url": "string (опциональный, при PASS)",
+        "issue_url": "string (опциональный, при NEEDS_HUMAN)"
+      },
+      "returns": "object { ok, ts }"
+    },
+    {
+      "name": "post_escalation",
+      "description": "Срочное уведомление об эскалации (NEEDS_HUMAN). Помечается как @here или @channel для привлечения внимания.",
+      "params": {
+        "loop_id": "string (обязательный)",
+        "reason": "string (обязательный, почему NEEDS_HUMAN)",
+        "task_description": "string (обязательный)",
+        "failed_checks": "array (обязательный, список провалившихся проверок)",
+        "artifacts_urls": "array (опциональный, ссылки на логи/отчёты)",
+        "notify_here": "boolean (опциональный, по умолчанию true — упомянуть @here)"
+      },
+      "returns": "object { ok, ts }"
+    },
+    {
+      "name": "post_weekly_report",
+      "description": "Недельный отчёт о работе 'Студии': количество выполненных loop-ов, общая стоимость, top-5 навыков, top-3 эскалации. Запускается по cron раз в неделю.",
+      "params": {
+        "period_start": "string (обязательный, ISO date YYYY-MM-DD)",
+        "period_end": "string (обязательный, ISO date YYYY-MM-DD)",
+        "loops_total": "integer (обязательный)",
+        "loops_pass": "integer (обязательный)",
+        "loops_fail": "integer (обязательный)",
+        "loops_escalated": "integer (обязательный)",
+        "total_cost_usd": "number (обязательный)",
+        "total_tokens": "integer (обязательный)",
+        "top_skills": "array (обязательный, top-5 использованных навыков)",
+        "top_escalations": "array (обязательный, top-3 причин эскалации)"
+      },
+      "returns": "object { ok, ts }"
+    }
+  ],
+  "permissions": {
+    "_comment": "Доступ к Slack только у Hermes — он централизованно отправляет уведомления от имени всех агентов. Другие агенты не имеют прямого доступа к Slack.",
+    "hermes": {
+      "access": "all",
+      "tools": ["post_message", "post_loop_completion", "post_escalation", "post_weekly_report"]
+    }
+  },
+  "rate_limits": {
+    "_comment": "Лимиты Slack API: 1 сообщение в секунду, 20 в минуту на канал. Этого достаточно — уведомления нечастые.",
+    "requests_per_minute": 20,
+    "burst_limit": 5
+  },
+  "security": {
+    "token_in_env": true,
+    "_token_note": "SLACK_BOT_TOKEN хранится в переменной окружения, не в конфиге. Маскируется в логах.",
+    "sanitize_messages": true,
+    "_sanitize_note": "Перед отправкой сообщения секреты (sk-*, ghp_*, xox*) автоматически маскируются."
+  }
+}

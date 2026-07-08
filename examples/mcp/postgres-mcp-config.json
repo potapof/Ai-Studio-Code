@@ -1,0 +1,128 @@
+{
+  "_comment": "Конфиг postgres MCP-сервера для 'Студии программирования' v2.0. Этот сервер — основной шлюз к 'мозгу' (PostgreSQL 16 + pgvector + Apache AGE). Используется Hermes, Holix-агентами и OpenHands с разными правами доступа (read_write / read_only).",
+  "_architecture": "В v2.0 NocoDB больше НЕ мозг — только приборная панель. Все агенты подключаются к PostgreSQL через этот MCP напрямую. Поддерживает SQL (включая Cypher через SELECT * FROM cypher(...)), векторный поиск pgvector (k-NN) и графовые запросы Apache AGE.",
+  "server": {
+    "name": "hermes-brain",
+    "version": "2.0.0",
+    "description": "MCP-сервер для подключения к конвергентной БД PostgreSQL 16 + pgvector + Apache AGE (мозг Студии программирования v2.0)",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres"],
+    "env": {
+      "POSTGRESQL_CONNECTION_STRING": "${HERMES_POSTGRES_URL}"
+    }
+  },
+  "tools": [
+    {
+      "name": "query",
+      "description": "Выполнение SQL-запроса (включая Cypher через SELECT * FROM cypher('graph_name', $$ ... $$) AS (...)). Только параметризованные запросы — защита от SQL-инъекций.",
+      "params": {
+        "sql": "string (обязательный)",
+        "params": "array (опциональный, значения для $1, $2, ...)"
+      },
+      "returns": "array of rows (макс. 10000 строк)"
+    },
+    {
+      "name": "list_tables",
+      "description": "Список таблиц в указанной схеме (по умолчанию public). Используется для разведки структуры БД.",
+      "params": {
+        "schema": "string (опциональный, по умолчанию public)"
+      },
+      "returns": "array of { table_name, table_type }"
+    },
+    {
+      "name": "describe_table",
+      "description": "Описание структуры таблицы: колонки, типы, индексы, комментарии.",
+      "params": {
+        "schema": "string (опциональный, по умолчанию public)",
+        "table": "string (обязательный)"
+      },
+      "returns": "object { columns, indexes, comments }"
+    },
+    {
+      "name": "list_schemas",
+      "description": "Список схем БД (для мультитенантности). Каждому тенанту соответствует схема studio_<tenant_id>.",
+      "params": {},
+      "returns": "array of { schema_name, owner, tenant_id }"
+    },
+    {
+      "name": "vector_search",
+      "description": "Custom wrapper для pgvector k-NN поиска. Выполняет косинусный поиск ближайших соседей по эмбеддингу (384d, all-MiniLM-L6-v2). Используется для RAG по public.skills и public.handoff_documents.",
+      "params": {
+        "table": "string (обязательный, например public.skills или public.handoff_documents)",
+        "vector_column": "string (по умолчанию embedding)",
+        "content_column": "string (по умолчанию content_markdown)",
+        "query_embedding": "array of float (384 значения, обязательный)",
+        "top_k": "integer (по умолчанию 5)",
+        "threshold": "float (по умолчанию 0.7, минимальный cosine similarity)",
+        "where_clause": "string (опциональный, фильтр по метаданным, например tenant_id = 'default')"
+      },
+      "returns": "array of { id, content, score, metadata }"
+    },
+    {
+      "name": "graph_query",
+      "description": "Custom wrapper для Apache AGE Cypher-запросов. Выполняет обход графа зависимостей кода, анализа архитектуры. Возможные имена графов: code_graph, dependency_graph, agent_collaboration_graph.",
+      "params": {
+        "graph_name": "string (обязательный, например code_graph)",
+        "cypher": "string (обязательный, Cypher-запрос, например MATCH (n:Module)-[:DEPENDS_ON]->(m:Module) RETURN n, m)",
+        "params": "object (опциональный, параметры Cypher)"
+      },
+      "returns": "array of rows (структура зависит от RETURN-выражения Cypher)"
+    }
+  ],
+  "permissions": {
+    "_comment": "Права доступа по агентам. read_write — SELECT/INSERT/UPDATE (DELETE запрещён на уровне SQL-роли studio_writer). read_only — только SELECT (роль studio_reader).",
+    "hermes": {
+      "access": "read_write",
+      "tools": ["query", "list_tables", "describe_table", "list_schemas", "vector_search", "graph_query"],
+      "description": "Hermes имеет полный доступ: может читать и писать в мозг (handoff_documents, skills, agent_sessions, api_keys_audit)."
+    },
+    "holix-coordinator": {
+      "access": "read_only",
+      "tools": ["query", "list_tables", "describe_table"],
+      "description": "Coordinator только читает данные для формирования контекста. Запись запрещена."
+    },
+    "holix-archivist": {
+      "access": "read_write",
+      "tools": ["query", "list_tables", "describe_table"],
+      "description": "Архивариус имеет read_write для записи эмбеддингов и навыков. DELETE запрещён на уровне SQL-роли."
+    },
+    "holix-backend-lead": {
+      "access": "read_only",
+      "tools": ["query", "list_tables", "describe_table"],
+      "description": "Team Lead бэкенда только читает спецификации и архитектурные решения."
+    },
+    "holix-frontend-lead": {
+      "access": "read_only",
+      "tools": ["query", "list_tables", "describe_table"],
+      "description": "Team Lead фронтенда только читает спецификации и архитектурные решения."
+    },
+    "openhands": {
+      "access": "read_only",
+      "tools": ["query", "list_tables", "describe_table", "vector_search", "graph_query"],
+      "description": "OpenHands может ЧИТАТЬ знания из мозга (включая векторный поиск и графы), но НЕ писать. Запись идёт через Архивариуса или Hermes."
+    }
+  },
+  "rate_limits": {
+    "_comment": "Глобальные лимиты на MCP-сервер (защита от DDoS и зацикливания агентов).",
+    "requests_per_minute": 1000,
+    "concurrent_connections": 10,
+    "timeout_seconds": 30
+  },
+  "security": {
+    "sql_injection_protection": "parameterized_queries_only",
+    "_sql_injection_note": "Все SQL-запросы обязаны использовать параметризацию ($1, $2). Запросы с конкатенацией строк отклоняются.",
+    "forbid_ddl": true,
+    "_ddl_note": "Запрет CREATE/DROP/ALTER на уровне MCP-сервера (двойная защита наряду с SQL-ролью).",
+    "forbid_truncate": true,
+    "_truncate_note": "TRUNCATE запрещён — необратимая операция без транзакции.",
+    "row_limit": 10000,
+    "_row_limit_note": "Максимум 10000 строк в одном результате запроса. Защита от случайного SELECT * FROM huge_table.",
+    "forbidden_tables": [
+      "public.api_keys_audit"
+    ],
+    "_forbidden_tables_note": "Таблица аудита api_keys_audit доступна только для SELECT специальным ролям — обычные агенты не могут ни писать, ни читать её.",
+    "log_all_queries": true,
+    "_log_note": "Все SQL-запросы логируются в public.api_keys_audit для последующего разбора инцидентов."
+  }
+}

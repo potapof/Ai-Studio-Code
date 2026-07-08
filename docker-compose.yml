@@ -1,0 +1,598 @@
+# Docker Compose стек «Студии программирования» 2.0
+#
+# АРХИТЕКТУРА 2.0: Разделение ответственности
+#   - Мозг (для AI): PostgreSQL 16 + pgvector + Apache AGE (hermes_brain)
+#   - Приборная панель (для человека): NocoDB (только UI)
+#
+# Запуск:
+#   1. cp examples/.env.example .env && nano .env
+#   2. docker compose up -d
+#   3. ./scripts/06-init-convergent-db.sh
+#   4. ./scripts/07-bootstrap-hermes-mcp.sh
+#
+# Подробности: docs/03-docker-stack.md
+
+name: studio
+
+networks:
+  ai-studio_ai_studio_network:
+    external: true
+  studio-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          ip_range: 172.20.0.0/24
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: br-studio
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/studio/postgres
+  nocodb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/studio/nocodb
+  hermes_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/potapof/studio/.hermes
+  holix_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/potapof/studio/.holix
+  holix_coordinator_data:
+    driver: local
+  holix_archivist_data:
+    driver: local
+  holix_backend_lead_data:
+    driver: local
+  holix_frontend_lead_data:
+    driver: local
+  holix_qa_data:
+    driver: local
+  holix_loop_checker_data:
+    driver: local
+  holix_lint_data:
+    driver: local
+  openhands_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/potapof/studio/.openhands
+  portainer_data:
+    driver: local
+  syncthing_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/potapof/studio/.config/syncthing
+  egress_logs:
+    driver: local
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+x-holix-security: &holix-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - SETUID
+    - SETGID
+    - DAC_OVERRIDE
+  tmpfs:
+    - /tmp:size=256M
+
+services:
+  # =====================================================
+  # МОЗГ: PostgreSQL 16 + pgvector + Apache AGE
+  # =====================================================
+  postgres-db:
+    image: pgvector/pgvector:pg16
+    container_name: nocodb-postgres-db-2
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hermes_brain}
+      POSTGRES_USER: ${POSTGRES_USER:-nocodb_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./examples/sql:/docker-entrypoint-initdb.d:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.30
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4'
+    logging: *default-logging
+
+  # =====================================================
+  # ПРИБОРНАЯ ПАНЕЛЬ: NocoDB (только UI для человека)
+  # =====================================================
+  nocodb-app:
+    image: nocodb/nocodb:latest
+    container_name: nocodb-web-ui-2
+    restart: unless-stopped
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    environment:
+      NC_DB: "pg://postgres-db:5432/hermes_brain"
+      NC_DB_USER: ${POSTGRES_USER}
+      NC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      NC_AUTH_JWT_SECRET: ${NC_AUTH_JWT_SECRET:?NC_AUTH_JWT_SECRET is required}
+      NC_PUBLIC_URL: "http://localhost:8080"
+      NC_DASHBOARD_PATH: "/dashboard"
+      NC_DISABLE_TELEMETRY: "true"
+      NC_TRY: "false"
+    ports:
+      - "8080:8080"
+    volumes:
+      - nocodb_data:/usr/app/data
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.20
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ОРКЕСТРАТОР: Hermes Agent (Nous Research)
+  # =====================================================
+  hermes:
+    image: ghcr.io/nousresearch/hermes-agent:latest
+    container_name: hermes
+    restart: unless-stopped
+    depends_on:
+      nocodb-app:
+        condition: service_healthy
+      postgres-db:
+        condition: service_healthy
+      egress-proxy:
+        condition: service_started
+    env_file: .env
+    environment:
+      HERMES_CONFIG_PATH: /config/hermes-config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@nocodb-postgres-db:5432/hermes_brain"
+      LLM_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+      LLM_MODEL: deepseek-chat
+      LLM_BASE_URL: https://api.deepseek.com
+      HTTP_PROXY: http://egress-proxy:3128
+      HTTPS_PROXY: http://egress-proxy:3128
+      NO_PROXY: localhost,postgres-db,nocodb-app,holix-*,openhands
+      TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "8082:8080"
+      - "8081:8081"
+    volumes:
+      - hermes_data:/config
+      - ./examples/configs/hermes-config.yaml:/config/hermes-config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/holix-worktrees:/worktrees
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.10
+    healthcheck:
+      test: ["CMD-SHELL", "hermes healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix Coordinator
+  # =====================================================
+  holix-coordinator:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-coordinator
+    restart: unless-stopped
+    depends_on:
+      - hermes
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: coordinator
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.2"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-coordinator.yaml:/config/config.yaml:ro
+      - holix_coordinator_data:/workspace
+      - /tmp/holix-worktrees:/worktrees
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.41
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix Archivist (skills + embeddings)
+  # =====================================================
+  holix-archivist:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-archivist
+    restart: unless-stopped
+    depends_on:
+      - hermes
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: archivist
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.3"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-archivist.yaml:/config/config.yaml:ro
+      - holix_archivist_data:/workspace
+      - hermes_data:/config/hermes-shared:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.42
+    <<: *holix-security
+    tmpfs:
+      - /tmp:size=512M
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix Backend Lead
+  # =====================================================
+  holix-backend-lead:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-backend-lead
+    restart: unless-stopped
+    depends_on:
+      - hermes
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: backend-lead
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.4"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-backend-lead.yaml:/config/config.yaml:ro
+      - holix_backend_lead_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.43
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix Frontend Lead
+  # =====================================================
+  holix-frontend-lead:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-frontend-lead
+    restart: unless-stopped
+    depends_on:
+      - hermes
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: frontend-lead
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.4"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-frontend-lead.yaml:/config/config.yaml:ro
+      - holix_frontend_lead_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.44
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix QA (тесты, линтеры, SAST)
+  # =====================================================
+  holix-qa:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-qa
+    restart: unless-stopped
+    depends_on:
+      - hermes
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: qa
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.0"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-qa.yaml:/config/config.yaml:ro
+      - holix_qa_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.47
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix Loop Checker
+  # =====================================================
+  holix-loop-checker:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-loop-checker
+    restart: unless-stopped
+    depends_on:
+      - hermes
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: loop-checker
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.0"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-loop-checker.yaml:/config/config.yaml:ro
+      - holix_loop_checker_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.48
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================
+  # ИСПОЛНИТЕЛИ: Holix Lint Agent
+  # =====================================================
+  holix-lint:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-lint
+    restart: unless-stopped
+    depends_on:
+      - hermes
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: lint
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-chat
+      LLM_TEMPERATURE: "0.0"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-lint.yaml:/config/config.yaml:ro
+      - holix_lint_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.49
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging: *default-logging
+
+  # =====================================================
+  # ВНЕШНИЙ ПОДРЯДЧИК: OpenHands (Maker)
+  # =====================================================
+  openhands:
+    image: ghcr.io/all-hands-ai/openhands:main
+    container_name: openhands
+    restart: unless-stopped
+    depends_on:
+      - hermes
+      - egress-proxy
+    env_file: .env
+    environment:
+      LLM_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY is required}
+      LLM_MODEL: deepseek-chat
+      LLM_BASE_URL: https://api.deepseek.com
+      WORKSPACE_BASE: /workspace
+      SANDBOX_TYPE: rh
+      HTTP_PROXY: http://egress-proxy:3128
+      HTTPS_PROXY: http://egress-proxy:3128
+      NO_PROXY: localhost,postgres-db,nocodb-app,hermes,holix-*
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - openhands_data:/workspace
+      - ./examples/configs/openhands-config.toml:/workspace/.openhands/config.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/holix-worktrees:/worktrees
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.60
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    logging: *default-logging
+
+  # =====================================================
+  # БЕЗОПАСНОСТЬ: Egress Proxy (Squid с whitelist)
+  # =====================================================
+  egress-proxy:
+    image: ubuntu/squid:latest
+    container_name: egress-squid
+    restart: unless-stopped
+    volumes:
+      - ./examples/configs/squid.conf:/etc/squid/squid.conf:ro
+      - ./examples/configs/squid-whitelist.txt:/etc/squid/whitelist.txt:ro
+      - egress_logs:/var/log/squid
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.100
+    ports:
+      - "3128:3128"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    logging: *default-logging
+
+  # =====================================================
+  # МОНИТОРИНГ: Portainer
+  # =====================================================
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: always
+    ports:
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.70
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    logging: *default-logging
+
+  # =====================================================
+  # СИНХРОНИЗАЦИЯ: Syncthing (P2P с Windows-хостом)
+  # =====================================================
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "8384:8384"
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      - "21027:21027/udp"
+    volumes:
+      - syncthing_data:/config
+      - /home/potapof/studio/syncthing-host:/data1
+    networks:
+      ai-studio_ai_studio_network:
+      studio-net:
+        ipv4_address: 172.20.0.80
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    logging: *default-logging

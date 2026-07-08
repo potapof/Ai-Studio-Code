@@ -1,0 +1,176 @@
+# ============================================================================
+# holix-archivist.yaml
+# ============================================================================
+# Holix Archivist — хранитель библиотеки навыков и векторной памяти в "Студии
+# программирования" v2.0.
+#
+# Назначение:
+#   - Управление таблицей public.skills (создание, обновление, извлечение
+#     уроков).
+#   - Генерация эмбеддингов для skills и handoff_documents (через локальную
+#     модель sentence-transformers/all-MiniLM-L6-v2, 384 измерений).
+#   - Семантический поиск (k-NN по pgvector) для RAG.
+#   - Обработка входящих HandoffPacket от Hermes: генерация эмбеддинга и
+#     сохранение в public.handoff_documents.
+#
+# Ключевая особенность v2.0:
+#   - Полная сетевая изоляция: только подключение к Postgres (мозгу).
+#   - Имеет read_write доступ к мозгу (пишет эмбеддинги, навыки, уроки).
+#   - lesson_extraction.auto_apply=false: выученные уроки НЕ применяются
+#     автоматически, требуется одобрение Hermes (защита от закрепления
+#     ошибочных паттернов).
+#
+# LLM-провайдер: DeepSeek, deepseek-chat, температура 0.3 (баланс для
+# генерации эмбеддингов и аккуратного извлечения уроков).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Профиль агента
+# ---------------------------------------------------------------------------
+profile:
+  name: holix-archivist
+  role: knowledge_manager
+  description: >
+    Управление библиотекой навыков Hermes (public.skills) и векторной памятью
+    (public.handoff_documents). Генерирует эмбеддинги, извлекает уроки,
+    выполняет семантический RAG-поиск.
+
+# ---------------------------------------------------------------------------
+# 2. LLM-модель
+# ---------------------------------------------------------------------------
+model:
+  provider: deepseek
+  name: deepseek-chat
+  temperature: 0.3          # аккуратность при извлечении уроков и описании навыков
+  max_tokens: 8192
+  timeout: 120
+
+# ---------------------------------------------------------------------------
+# 3. Инструменты
+# ---------------------------------------------------------------------------
+tools:
+  enabled:
+    - files
+    - semantic_search                 # k-NN по pgvector
+    - create_skill                    # INSERT в public.skills
+    - update_skill                    # UPDATE public.skills
+    - extract_lessons                 # анализ повторяющихся паттернов
+    - generate_embedding              # вызов локальной sentence-transformers
+    - sync_handoff_to_db              # сохранение HANDOFF.md в public.handoff_documents
+  restricted_commands:
+    - "rm -rf"
+    - "git *"
+    - "sudo"
+    - "curl *"
+
+# ---------------------------------------------------------------------------
+# 4. Workspace (jail)
+# ---------------------------------------------------------------------------
+workspace:
+  jail_path: /workspace/archivist
+  read_only_paths:
+    - /workspace/archivist/config
+    - /workspace/archivist/handoffs-incoming
+  writable_paths:
+    - /workspace/archivist/handoffs-processed
+    - /workspace/archivist/embeddings-cache
+  max_file_size_mb: 20
+
+# ---------------------------------------------------------------------------
+# 5. Сеть (полная изоляция от внешнего мира)
+# ---------------------------------------------------------------------------
+network:
+  egress_allow: []                    # никаких внешних соединений
+  egress_deny:
+    - "*"
+  internal_services:
+    - nocodb-postgres-db:5432         # только мозг (PostgreSQL)
+
+# ---------------------------------------------------------------------------
+# 6. MCP-серверы (read_write к мозгу — для записи эмбеддингов и навыков)
+# ---------------------------------------------------------------------------
+mcp_servers:
+  - name: postgres-write
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres", "${HERMES_POSTGRES_URL}"]
+    access: read_write
+    tools:
+      - query                         # SELECT, INSERT, UPDATE (DELETE запрещён на уровне SQL-роли)
+      - list_tables
+      - describe_table
+    description: >
+      Архивариус имеет read_write к мозгу для записи эмбеддингов и навыков.
+      DELETE запрещён на уровне PostgreSQL-роли studio_writer — Архивариус
+      не может удалить навык даже при компрометации через prompt injection.
+
+# ---------------------------------------------------------------------------
+# 7. Модель эмбеддингов
+# ---------------------------------------------------------------------------
+embedding_model:
+  name: sentence-transformers/all-MiniLM-L6-v2
+  dimensions: 384                     # соответствует VECTOR(384) в public.skills и public.handoff_documents
+  device: cpu                         # локальный CPU-инференс (без GPU)
+  batch_size: 32
+  cache_dir: /workspace/archivist/embeddings-cache
+
+# ---------------------------------------------------------------------------
+# 8. Параметры семантического поиска
+# ---------------------------------------------------------------------------
+search:
+  top_k: 5                            # возвращать топ-5 ближайших соседей
+  threshold: 0.7                      # минимальный cosine similarity (0..1)
+  index: hnsw                         # HNSW-индекс (быстрее IVFFlat для небольших объёмов)
+
+# ---------------------------------------------------------------------------
+# 9. Извлечение уроков
+# ---------------------------------------------------------------------------
+# Архивариус анализирует handoff_documents и ищет повторяющиеся паттерны
+# (успешные решения или повторяющиеся ошибки). Извлечённый урок сохраняется
+# как skill_type=lesson, но НЕ применяется автоматически.
+lesson_extraction:
+  min_pattern_count: 2                # паттерн считается уроком, если встретился >= 2 раз
+  cooldown_hours: 24                  # повторное извлечение того же урока не чаще раза в сутки
+  auto_apply: false                   # требует одобрения Hermes
+  review_queue_table: public.skills   # уроки сохраняются со status='draft'
+
+# ---------------------------------------------------------------------------
+# 10. Handoff-процессор
+# ---------------------------------------------------------------------------
+# Архивариус следит за директорией входящих handoff-файлов от Hermes,
+# генерирует для каждого эмбеддинг и сохраняет в public.handoff_documents.
+handoff_processor:
+  watch_dir: /workspace/archivist/handoffs-incoming
+  process_interval_seconds: 60        # опрос директории раз в минуту
+  on_new_handoff: generate_embedding_and_save
+  archive_processed: true             # переносить обработанные файлы в handoffs-processed
+  embedding_required: true            # не сохранять запись без эмбеддинга
+
+# ---------------------------------------------------------------------------
+# 11. Лимиты
+# ---------------------------------------------------------------------------
+limits:
+  max_tokens_per_hour: 80000
+  max_requests_per_minute: 15
+  daily_cost_usd_limit: 3.00
+  max_embeddings_per_hour: 500        # локальный инференс, но всё равно ограничение
+
+# ---------------------------------------------------------------------------
+# 12. Healthcheck
+# ---------------------------------------------------------------------------
+healthcheck:
+  command: "holix healthcheck --agent=archivist"
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+# ---------------------------------------------------------------------------
+# 13. Логирование
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  format: json
+  destination: /var/log/holix/archivist.log
+  rotate_size_mb: 50
+  rotate_keep: 7
+  sanitize_secrets: true

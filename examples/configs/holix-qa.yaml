@@ -1,0 +1,161 @@
+# ============================================================================
+# holix-qa.yaml
+# ============================================================================
+# Holix QA — агент Quality Assurance в "Студии программирования" v2.0.
+#
+# Назначение:
+#   Запуск набора проверок (тесты, линтеры, SAST, секрет-сканер) над
+#   артефактом, полученным от Maker'а (Hermes/OpenHands/Holix dev). Выносит
+#   структурированный вердикт PASS/FAIL/NEEDS_HUMAN с детализацией по каждой
+#   проверке.
+#
+# Ключевая особенность v2.0:
+#   - Полная сетевая изоляция (ни egress, ни internal_services) — QA не должен
+#     иметь возможность "позвать на помощь" во время проверки.
+#   - Температура 0.0 — максимальная объективность, детерминированные вердикты.
+#   - Запуск 6 инструментов: pytest, flake8, bandit, semgrep, pip-audit
+#     (опциональный), trufflehog (поиск секретов).
+#   - verdict_format жёстко зафиксирован: арбитраж Hermes парсит его
+#     регулярным выражением.
+#
+# LLM-провайдер: DeepSeek, deepseek-chat, температура 0.0 (максимальная
+# объективность).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Профиль агента
+# ---------------------------------------------------------------------------
+profile:
+  name: holix-qa
+  role: quality_assurance
+  description: >
+    Независимый проверяющий. Запускает тесты, линтеры, SAST и секрет-сканер.
+    Не видит промпт Maker'а, не знает его намерений. Проверяет только по
+    жёстким критериям.
+
+# ---------------------------------------------------------------------------
+# 2. LLM-модель
+# ---------------------------------------------------------------------------
+model:
+  provider: deepseek
+  name: deepseek-chat
+  temperature: 0.0          # максимальная объективность, детерминированные вердикты
+  max_tokens: 4096
+  timeout: 120
+
+# ---------------------------------------------------------------------------
+# 3. Инструменты
+# ---------------------------------------------------------------------------
+tools:
+  enabled:
+    - shell
+    - files
+  restricted_commands:
+    - "git *"
+    - "docker *"
+    - "sudo"
+    - "curl *"
+    - "wget *"
+    - "rm -rf /"
+
+# ---------------------------------------------------------------------------
+# 4. Workspace (jail)
+# ---------------------------------------------------------------------------
+workspace:
+  jail_path: /workspace/qa
+  read_only_paths:
+    - /workspace/qa/artifacts-incoming   # сюда Coordinator кладёт артефакт Maker'а
+  writable_paths:
+    - /workspace/qa/reports
+    - /tmp
+  max_file_size_mb: 50
+
+# ---------------------------------------------------------------------------
+# 5. Сеть (полная изоляция)
+# ---------------------------------------------------------------------------
+network:
+  egress_allow: []                    # никаких внешних соединений
+  egress_deny:
+    - "*"
+  internal_services: []               # даже к Postgres не подключается
+
+# ---------------------------------------------------------------------------
+# 6. Перечень проверок
+# ---------------------------------------------------------------------------
+# required=true  — FAIL этой проверки автоматически даёт общий FAIL.
+# required=false — отчётный, не блокирующий (например, pip-audit может
+#                  давать false positives на свежие CVE).
+checks:
+  - name: pytest
+    command: "pytest -v --tb=short --junitxml=/tmp/pytest.xml"
+    required: true
+    timeout_seconds: 300
+
+  - name: flake8
+    command: "flake8 --max-line-length=120 --format=json"
+    required: true
+    timeout_seconds: 60
+
+  - name: bandit
+    command: "bandit -r . -f json -o /tmp/bandit.json"
+    required: true
+    timeout_seconds: 120
+
+  - name: semgrep
+    command: "semgrep --config=auto --json"
+    required: true
+    timeout_seconds: 180
+
+  - name: pip-audit
+    command: "pip-audit --strict --format=json"
+    required: false                  # не блокирующий — может давать false positives
+    timeout_seconds: 90
+
+  - name: trufflehog
+    command: "trufflehog filesystem . --json"
+    required: true                   # секрет-сканер — критичный, всегда блокирующий
+    timeout_seconds: 120
+
+# ---------------------------------------------------------------------------
+# 7. Формат вердикта (парсится Hermes'ом регулярным выражением)
+# ---------------------------------------------------------------------------
+# Вердикт должен строго соответствовать этому шаблону. Любое отклонение
+# трактуется Hermes'ом как NEEDS_HUMAN (агент QA сломался).
+verdict_format: |
+  CHECKER_VERDICT: {PASS|FAIL|NEEDS_HUMAN}
+  DETAILS:
+  - pytest: {pass/fail} ({N} tests, {M} failed)
+  - flake8: {pass/fail} ({N} issues)
+  - bandit: {pass/fail} ({N} issues, severity: {low/med/high})
+  - semgrep: {pass/fail} ({N} findings)
+  - trufflehog: {pass/fail} ({N} secrets found)
+  ESCALATION_REASON: (если FAIL или NEEDS_HUMAN)
+
+# ---------------------------------------------------------------------------
+# 8. Лимиты
+# ---------------------------------------------------------------------------
+limits:
+  max_tokens_per_hour: 30000
+  max_requests_per_minute: 5
+  daily_cost_usd_limit: 2.00
+  max_concurrent_checks: 1            # проверки последовательны во избежание гонок
+
+# ---------------------------------------------------------------------------
+# 9. Healthcheck
+# ---------------------------------------------------------------------------
+healthcheck:
+  command: "holix healthcheck --agent=qa"
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+# ---------------------------------------------------------------------------
+# 10. Логирование
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  format: json
+  destination: /var/log/holix/qa.log
+  rotate_size_mb: 50
+  rotate_keep: 7
+  sanitize_secrets: true

@@ -1,0 +1,140 @@
+# ============================================================================
+# holix-frontend-lead.yaml
+# ============================================================================
+# Holix Frontend Lead — Team Lead фронтенд-команды в "Студии программирования"
+# v2.0.
+#
+# Назначение:
+#   Декомпозиция фронтенд-задач (TypeScript, JavaScript) на подзадачи для
+#   исполнителей (holix-react-dev) и координация с QA. Не пишет
+#   production-код сам — только планирует и делегирует.
+#
+# Ключевая особенность v2.0:
+#   - Аналогичен holix-backend-lead, но специализация — frontend.
+#   - Specialty: frontend, languages: typescript + javascript, frameworks:
+#     react + next.js + tailwind.
+#   - Подключается к мозгу через postgres MCP в режиме read_only.
+#   - Внутренние сервисы: postgres, holix-react-dev, holix-qa.
+#
+# LLM-провайдер: DeepSeek, deepseek-chat, температура 0.4 (декомпозиция).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Профиль агента
+# ---------------------------------------------------------------------------
+profile:
+  name: holix-frontend-lead
+  role: team_lead
+  description: >
+    Team Lead фронтенд-команды. Декомпозирует задачи TypeScript/JavaScript,
+    делегирует исполнителям (holix-react-dev), координирует с QA. Не пишет
+    production-код сам.
+
+# ---------------------------------------------------------------------------
+# 2. LLM-модель
+# ---------------------------------------------------------------------------
+model:
+  provider: deepseek
+  name: deepseek-chat
+  temperature: 0.4          # баланс для декомпозиции
+  max_tokens: 6144
+  timeout: 120
+
+# ---------------------------------------------------------------------------
+# 3. Инструменты
+# ---------------------------------------------------------------------------
+tools:
+  enabled:
+    - shell
+    - files
+    - http_request_postgres          # чтение спецификаций из мозга
+    - delegate_to_executor           # делегирование подзадач holix-react-dev
+  restricted_commands:
+    - "rm -rf"
+    - "sudo"
+    - "docker *"
+    - "git push --force"
+
+# ---------------------------------------------------------------------------
+# 4. Workspace (jail)
+# ---------------------------------------------------------------------------
+workspace:
+  jail_path: /workspace/frontend-lead
+  read_only_paths:
+    - /workspace/frontend-lead/specs
+  writable_paths:
+    - /workspace/frontend-lead/decomposition-plans
+    - /workspace/frontend-lead/handoffs-outgoing
+  max_file_size_mb: 30
+
+# ---------------------------------------------------------------------------
+# 5. Сеть
+# ---------------------------------------------------------------------------
+network:
+  egress_allow:
+    - api.deepseek.com
+  egress_deny:
+    - "*"
+  internal_services:
+    - nocodb-postgres-db:5432        # мозг (read_only)
+    - holix-react-dev                # исполнитель фронтенда
+    - holix-qa                       # проверяющий
+
+# ---------------------------------------------------------------------------
+# 6. MCP-серверы (read_only к мозгу)
+# ---------------------------------------------------------------------------
+mcp_servers:
+  - name: postgres-readonly
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres", "${HERMES_POSTGRES_URL}"]
+    access: read_only
+    tools:
+      - query
+      - list_tables
+      - describe_table
+    description: >
+      Team Lead читает из мозга спецификации, архитектурные решения,
+      прошлые handoff_documents и skills. Запись запрещена — это задача
+      Архивариуса.
+
+# ---------------------------------------------------------------------------
+# 7. Профильные специализации
+# ---------------------------------------------------------------------------
+specialty: frontend
+languages:
+  - typescript
+  - javascript
+frameworks:
+  - react
+  - next.js
+  - tailwind
+
+# ---------------------------------------------------------------------------
+# 8. Лимиты
+# ---------------------------------------------------------------------------
+limits:
+  max_tokens_per_hour: 60000
+  max_requests_per_minute: 15
+  daily_cost_usd_limit: 5.00
+  max_delegations_per_hour: 30
+
+# ---------------------------------------------------------------------------
+# 9. Healthcheck
+# ---------------------------------------------------------------------------
+healthcheck:
+  command: "holix healthcheck --agent=frontend-lead"
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+# ---------------------------------------------------------------------------
+# 10. Логирование
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  format: json
+  destination: /var/log/holix/frontend-lead.log
+  rotate_size_mb: 50
+  rotate_keep: 7
+  sanitize_secrets: true

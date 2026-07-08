@@ -1,0 +1,141 @@
+# ============================================================================
+# holix-backend-lead.yaml
+# ============================================================================
+# Holix Backend Lead — Team Lead бэкенд-команды в "Студии программирования"
+# v2.0.
+#
+# Назначение:
+#   Декомпозиция бэкенд-задач (Python, SQL) на подзадачи для исполнителей
+#   (holix-python-dev) и координация с QA. Не пишет production-код сам —
+#   только планирует и делегирует.
+#
+# Ключевая особенность v2.0:
+#   - Подключается к мозгу через postgres MCP в режиме read_only (читает
+#     спецификации, архитектурные решения, но не пишет — запись идёт через
+#     Архивариуса).
+#   - Specialty: backend, languages: python + sql, frameworks: fastapi +
+#     sqlalchemy + celery.
+#   - Температура 0.4 — баланс точности и креативности для декомпозиции.
+#
+# LLM-провайдер: DeepSeek, deepseek-chat, температура 0.4 (декомпозиция).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Профиль агента
+# ---------------------------------------------------------------------------
+profile:
+  name: holix-backend-lead
+  role: team_lead
+  description: >
+    Team Lead бэкенд-команды. Декомпозирует задачи Python/SQL, делегирует
+    исполнителям (holix-python-dev), координирует с QA. Не пишет
+    production-код сам.
+
+# ---------------------------------------------------------------------------
+# 2. LLM-модель
+# ---------------------------------------------------------------------------
+model:
+  provider: deepseek
+  name: deepseek-chat
+  temperature: 0.4          # баланс для декомпозиции
+  max_tokens: 6144
+  timeout: 120
+
+# ---------------------------------------------------------------------------
+# 3. Инструменты
+# ---------------------------------------------------------------------------
+tools:
+  enabled:
+    - shell
+    - files
+    - http_request_postgres          # чтение спецификаций из мозга
+    - delegate_to_executor           # делегирование подзадач holix-python-dev
+  restricted_commands:
+    - "rm -rf"
+    - "sudo"
+    - "docker *"
+    - "git push --force"
+
+# ---------------------------------------------------------------------------
+# 4. Workspace (jail)
+# ---------------------------------------------------------------------------
+workspace:
+  jail_path: /workspace/backend-lead
+  read_only_paths:
+    - /workspace/backend-lead/specs
+  writable_paths:
+    - /workspace/backend-lead/decomposition-plans
+    - /workspace/backend-lead/handoffs-outgoing
+  max_file_size_mb: 30
+
+# ---------------------------------------------------------------------------
+# 5. Сеть
+# ---------------------------------------------------------------------------
+network:
+  egress_allow:
+    - api.deepseek.com
+  egress_deny:
+    - "*"
+  internal_services:
+    - nocodb-postgres-db:5432        # мозг (read_only)
+    - holix-python-dev               # исполнитель бэкенда
+    - holix-qa                       # проверяющий
+
+# ---------------------------------------------------------------------------
+# 6. MCP-серверы (read_only к мозгу)
+# ---------------------------------------------------------------------------
+mcp_servers:
+  - name: postgres-readonly
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres", "${HERMES_POSTGRES_URL}"]
+    access: read_only
+    tools:
+      - query
+      - list_tables
+      - describe_table
+    description: >
+      Team Lead читает из мозга спецификации, архитектурные решения,
+      прошлые handoff_documents и skills. Запись запрещена — это задача
+      Архивариуса.
+
+# ---------------------------------------------------------------------------
+# 7. Профильные специализации
+# ---------------------------------------------------------------------------
+specialty: backend
+languages:
+  - python
+  - sql
+frameworks:
+  - fastapi
+  - sqlalchemy
+  - celery
+
+# ---------------------------------------------------------------------------
+# 8. Лимиты
+# ---------------------------------------------------------------------------
+limits:
+  max_tokens_per_hour: 60000
+  max_requests_per_minute: 15
+  daily_cost_usd_limit: 5.00
+  max_delegations_per_hour: 30
+
+# ---------------------------------------------------------------------------
+# 9. Healthcheck
+# ---------------------------------------------------------------------------
+healthcheck:
+  command: "holix healthcheck --agent=backend-lead"
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+# ---------------------------------------------------------------------------
+# 10. Логирование
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  format: json
+  destination: /var/log/holix/backend-lead.log
+  rotate_size_mb: 50
+  rotate_keep: 7
+  sanitize_secrets: true

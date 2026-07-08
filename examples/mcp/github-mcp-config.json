@@ -1,0 +1,199 @@
+{
+  "_comment": "Конфиг GitHub MCP-сервера для 'Студии программирования' v2.0. Подключение через stdio (npx @modelcontextprotocol/server-github). Аналогично v1.0, но с учётом новых ролей (Coordinator может создавать ветки, Loop Checker — только чтение).",
+  "_architecture": "GitHub используется для: чтения issue/PR/коммитов, создания веток и PR, ревью PR. Hermes имеет все права, Coordinator — read_only + create_branch, Loop Checker — только read_only.",
+  "server": {
+    "name": "github",
+    "version": "2.0.0",
+    "description": "GitHub MCP-сервер для управления репозиторием проекта: issue, PR, ветки, workflow",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"],
+    "env": {
+      "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+    }
+  },
+  "tools": [
+    {
+      "name": "create_pull_request",
+      "description": "Создание Pull Request. Используется Hermes'ом при on_pass арбитража (CHECKER_VERDICT=PASS -> открыть PR).",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "title": "string (обязательный)",
+        "head": "string (обязательный, source branch)",
+        "base": "string (обязательный, target branch, обычно main)",
+        "body": "string (опциональный, markdown-описание PR)"
+      },
+      "returns": "object { number, html_url, state }"
+    },
+    {
+      "name": "list_pull_requests",
+      "description": "Список открытых (или всех) PR репозитория.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "state": "string (опциональный: open|closed|all, по умолчанию open)"
+      },
+      "returns": "array of { number, title, head, base, state, draft }"
+    },
+    {
+      "name": "get_pull_request",
+      "description": "Получение полной информации о PR: метаданные, diff, статус проверок, reviews.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "pull_number": "integer (обязательный)"
+      },
+      "returns": "object { number, title, body, head, base, state, mergeable, reviews, statuses }"
+    },
+    {
+      "name": "create_pull_request_review",
+      "description": "Создание review на PR (APPROVE, REQUEST_CHANGES, COMMENT). Используется Hermes'ом при ручном ревью.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "pull_number": "integer (обязательный)",
+        "event": "string (обязательный: APPROVE|REQUEST_CHANGES|COMMENT)",
+        "body": "string (опциональный)",
+        "comments": "array (опциональный, inline-комментарии к конкретным строкам)"
+      },
+      "returns": "object { id, state, user }"
+    },
+    {
+      "name": "merge_pull_request",
+      "description": "Слияние PR. Доступно ТОЛЬКО Hermes'у — никаких авто-мержей из loop'ов без арбитража.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "pull_number": "integer (обязательный)",
+        "merge_method": "string (опциональный: merge|squash|rebase, по умолчанию squash)"
+      },
+      "returns": "object { sha, merged, message }"
+    },
+    {
+      "name": "create_branch",
+      "description": "Создание новой ветки от указанной base. Coordinator может создавать ветки для делегирования OpenHands.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "branch": "string (обязательный, имя новой ветки)",
+        "from_branch": "string (опциональный, по умолчанию default branch репозитория)"
+      },
+      "returns": "object { ref, sha }"
+    },
+    {
+      "name": "get_file_contents",
+      "description": "Чтение содержимого файла или директории в репозитории. Поддерживает указание ветки/тега.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "path": "string (обязательный)",
+        "ref": "string (опциональный, ветка/тег/SHA)"
+      },
+      "returns": "object { name, path, type, content (base64 для файлов), encoding }"
+    },
+    {
+      "name": "create_or_update_file",
+      "description": "Создание или обновление файла в репозитории (через commit). Используется для записи SKILL.md в репозиторий навыков.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "path": "string (обязательный)",
+        "message": "string (обязательный, commit message)",
+        "content": "string (обязательный, base64-кодированный контент)",
+        "branch": "string (опциональный)",
+        "sha": "string (опциональный, для обновления существующего файла)"
+      },
+      "returns": "object { commit: { sha, html_url } }"
+    },
+    {
+      "name": "list_commits",
+      "description": "Список коммитов в ветке (по умолчанию default branch).",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "sha": "string (опциональный, ветка/тег)",
+        "per_page": "integer (опциональный, по умолчанию 30)"
+      },
+      "returns": "array of { sha, commit: { message, author, date } }"
+    },
+    {
+      "name": "get_workflow_run_status",
+      "description": "Статус конкретного запуска GitHub Actions workflow (success/failure/in_progress).",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "run_id": "integer (обязательный)"
+      },
+      "returns": "object { id, status, conclusion, html_url }"
+    },
+    {
+      "name": "list_workflow_runs",
+      "description": "Список недавних запусков workflow. Используется Loop Checker'ом для проверки CI-статуса PR.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "branch": "string (опциональный)",
+        "event": "string (опциональный: push|pull_request|workflow_dispatch)",
+        "per_page": "integer (опциональный, по умолчанию 10)"
+      },
+      "returns": "array of { id, name, status, conclusion, head_branch, event }"
+    },
+    {
+      "name": "get_job_logs",
+      "description": "Получение логов конкретной job из workflow run. Используется Hermes'ом для диагностики упавшего CI.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "job_id": "integer (обязательный)"
+      },
+      "returns": "string (логи job)"
+    },
+    {
+      "name": "create_issue",
+      "description": "Создание issue. Используется для эскалации NEEDS_HUMAN — Hermes создаёт issue с описанием проблемы.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "title": "string (обязательный)",
+        "body": "string (опциональный, markdown)",
+        "labels": "array of string (опциональный)",
+        "assignees": "array of string (опциональный)"
+      },
+      "returns": "object { number, html_url, state }"
+    },
+    {
+      "name": "add_comment_to_issue",
+      "description": "Добавление комментария к issue. Используется для отслеживания прогресса эскалации.",
+      "params": {
+        "owner": "string (обязательный)",
+        "repo": "string (обязательный)",
+        "issue_number": "integer (обязательный)",
+        "body": "string (обязательный, markdown)"
+      },
+      "returns": "object { id, html_url }"
+    }
+  ],
+  "permissions": {
+    "_comment": "Права по агентам. Hermes — все инструменты. Coordinator — read_only + create_branch (для подготовки ветки под OpenHands). Loop Checker — только read_only (проверка статуса CI).",
+    "hermes": {
+      "access": "all",
+      "tools": ["create_pull_request", "list_pull_requests", "get_pull_request", "create_pull_request_review", "merge_pull_request", "create_branch", "get_file_contents", "create_or_update_file", "list_commits", "get_workflow_run_status", "list_workflow_runs", "get_job_logs", "create_issue", "add_comment_to_issue"]
+    },
+    "holix-coordinator": {
+      "access": "read_only + create_branch",
+      "tools": ["list_pull_requests", "get_pull_request", "create_branch", "get_file_contents", "list_commits", "get_workflow_run_status", "list_workflow_runs"],
+      "_note": "Coordinator может создавать ветки (для подготовки worktree под OpenHands), но не может мержить или создавать PR — это право Hermes."
+    },
+    "holix-loop-checker": {
+      "access": "read_only",
+      "tools": ["list_pull_requests", "get_pull_request", "get_workflow_run_status", "list_workflow_runs", "get_job_logs"],
+      "_note": "Loop Checker только проверяет статус CI и читает логи. Никаких модификаций."
+    }
+  },
+  "rate_limits": {
+    "_comment": "GitHub API лимиты: 5000 запросов в час для аутентифицированных запросов.",
+    "requests_per_hour": 5000,
+    "concurrent_requests": 5
+  }
+}

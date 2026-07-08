@@ -1,0 +1,115 @@
+{
+  "_comment": "Конфиг Stack Overflow for Agents (SOA) MCP-сервера для 'Студии программирования' v2.0. SOA — внешний источник проверенных технических знаний через OAuth 2.1.",
+  "_architecture": "Гибридная модель знаний: SOA отвечает на общие программистские вопросы, PostgreSQL (мозг) — на вопросы о внутреннем проекте. Маршрутизация выполняется Hermes'ом по правилам knowledge_orchestration.",
+  "_limits_note": "Бета-лимит SOA — 100 запросов в день. Hermes настроен на 80 (запас 20). Кеширование обязательно для экономии лимита.",
+  "server": {
+    "name": "stackoverflow",
+    "version": "2.0.0",
+    "description": "Stack Overflow for Agents MCP-сервер — публичная база проверенных технических знаний",
+    "transport": "http",
+    "url": "https://mcp.stackoverflow.com",
+    "auth": "oauth_2_1"
+  },
+  "oauth": {
+    "client_id_env": "SOA_CLIENT_ID",
+    "client_secret_env": "SOA_CLIENT_SECRET",
+    "auth_url": "https://stackoverflow.com/oauth",
+    "token_url": "https://api.stackexchange.com/oauth/access_token",
+    "scopes": ["read_inbox", "no_expiry"],
+    "redirect_uri": "http://localhost:8082/oauth/callback",
+    "pkce": true,
+    "_pkce_note": "PKCE обязателен для OAuth 2.1 (защита от перехвата authorization code)."
+  },
+  "tools": [
+    {
+      "name": "so_search",
+      "description": "Полнотекстовый поиск по вопросам и ответам Stack Overflow. Возвращает список релевантных вопросов с кратким описанием.",
+      "params": {
+        "query": "string (обязательный, поисковый запрос)",
+        "tags": "array of string (опциональный, например ['python', 'fastapi'])",
+        "accepted_only": "boolean (опциональный, по умолчанию true — только вопросы с принятым ответом)",
+        "min_score": "integer (опциональный, минимальный score вопроса, по умолчанию 5)",
+        "limit": "integer (опциональный, по умолчанию 10)"
+      },
+      "returns": "array of { question_id, title, score, tags, link, accepted_answer_id }"
+    },
+    {
+      "name": "get_content",
+      "description": "Получение полного содержания вопроса и всех его ответов по ID.",
+      "params": {
+        "question_id": "integer (обязательный)",
+        "include_comments": "boolean (опциональный, по умолчанию false)"
+      },
+      "returns": "object { question, answers: [...], accepted_answer }"
+    },
+    {
+      "name": "search_by_error",
+      "description": "Поиск по точному сообщению об ошибке. Удобнее so_search для трейсбэков — автоматически извлекает ключевые слова.",
+      "params": {
+        "error_message": "string (обязательный, полное сообщение об ошибке)",
+        "language": "string (опциональный, например 'python', 'javascript')",
+        "limit": "integer (опциональный, по умолчанию 5)"
+      },
+      "returns": "array of { question_id, title, score, accepted_answer_summary }"
+    },
+    {
+      "name": "analyze_stack_trace",
+      "description": "Анализ stack trace: извлекает фреймы, ищет релевантные вопросы по каждому фрейму, агрегирует результат.",
+      "params": {
+        "stack_trace": "string (обязательный, полный stack trace)",
+        "language": "string (опциональный, по умолчанию auto-detect)"
+      },
+      "returns": "object { root_cause_hypothesis, relevant_questions: [...], suggested_fixes: [...] }"
+    },
+    {
+      "name": "get_accepted_answer",
+      "description": "Быстрое получение только принятого ответа для вопроса (без загрузки всех ответов). Экономит трафик.",
+      "params": {
+        "question_id": "integer (обязательный)"
+      },
+      "returns": "object { answer_id, body_markdown, score, last_edit_date }"
+    }
+  ],
+  "permissions": {
+    "_comment": "Доступ к SOA только у Hermes — он маршрутизирует запросы от имени других агентов через себя. Это централизует учёт лимитов.",
+    "hermes": {
+      "access": "all",
+      "tools": ["so_search", "get_content", "search_by_error", "analyze_stack_trace", "get_accepted_answer"],
+      "description": "Hermes — единственный агент с прямым доступом к SOA. Другие агенты обращаются к нему через внутренний MCP."
+    }
+  },
+  "rate_limits": {
+    "_comment": "Лимиты SOA (бета). Кеширование обязательно — cache_ttl_seconds=3600 экономит дневной лимит.",
+    "daily_limit": 100,
+    "requests_per_minute": 10,
+    "cache_ttl_seconds": 3600,
+    "_daily_limit_note": "Бета-лимит SOA — 100 запросов в день. Hermes в hermes-config.yaml использует soa_daily_calls_limit=80 (запас 20 для отладки)."
+  },
+  "caching": {
+    "_comment": "Кеш ответов SOA в PostgreSQL (public.soa_cache). Кешируются все ответы инструментов — даже повторный поиск по тому же запросу не тратит дневной лимит.",
+    "enabled": true,
+    "storage": "postgres",
+    "table": "public.soa_cache",
+    "ttl_seconds": 86400,
+    "_ttl_note": "24 часа — достаточный срок для стабильных ответов SO. Stack Overflow редко меняет принятые ответы.",
+    "key_hash": "sha256",
+    "key_fields": ["tool_name", "params_json"]
+  },
+  "routing_hints": [
+    {
+      "pattern": "общие вопросы программирования|настройка библиотеки|как исправить ошибку",
+      "tool": "so_search",
+      "_note": "Общие программистские вопросы — прямой поиск по SO."
+    },
+    {
+      "pattern": "конкретная ошибка",
+      "tool": "search_by_error",
+      "_note": "Точное сообщение об ошибке — search_by_error извлекает ключевые слова автоматически."
+    },
+    {
+      "pattern": "stack trace",
+      "tool": "analyze_stack_trace",
+      "_note": "Полный stack trace — analyze_stack_trace обработает каждый фрейм."
+    }
+  ]
+}
