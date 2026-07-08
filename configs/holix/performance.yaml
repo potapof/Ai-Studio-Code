@@ -1,0 +1,48 @@
+# Holix Performance Agent — спящий специалист по производительности
+# Активируется: метка 'perf' в задаче, жалоба на медленный эндпоинт
+# В спящем режиме: 0 токенов, 0 CPU
+
+holix_profile: performance
+mode: dormant
+
+activation:
+  triggers:
+    - task_label: perf
+    - task_label: performance
+    - task_label: optimization
+    - metric: p95_latency > 1000ms
+    - manual: hermes
+  wake_up_delay: 5s
+  auto_sleep_after: 15m
+
+responsibilities:
+  - N+1 query detection (ORM lazy loading)
+  - Bundle size analysis (webpack/vite)
+  - Бенчмарки endpoint'ов (wrk / autocannon)
+  - Профилирование CPU / памяти
+  - DB query plan analysis (EXPLAIN ANALYZE)
+
+checks:
+  n_plus_one:
+    tool: bullet / query_log
+    severity: HIGH
+  bundle_size:
+    tool: webpack-bundle-analyzer
+    threshold: "> 500KB initial JS"
+    severity: MEDIUM
+  slow_queries:
+    tool: EXPLAIN ANALYZE
+    threshold: "> 100ms"
+    severity: HIGH
+  memory_leak:
+    tool: clinic / node --inspect
+    severity: MEDIUM
+
+scoring:
+  weight: 10
+  degradation_threshold: 20  # ухудшение на 20% → RETURN
+
+budget:
+  monthly_cents: 1000  # $10/мес
+  model: deepseek-chat
+  temperature: 0.0

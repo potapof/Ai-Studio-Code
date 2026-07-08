@@ -1,0 +1,49 @@
+# Holix Debug Agent — спящий специалист по отладке
+# Активируется: метка 'bug', падение в CI, нестабильный тест
+# В спящем режиме: 0 токенов, 0 CPU
+
+holix_profile: debug
+mode: dormant
+
+activation:
+  triggers:
+    - task_label: bug
+    - task_label: crash
+    - task_label: debug
+    - ci_event: test_failure
+    - ci_event: build_failure
+    - flaky_test: "> 2 failures in 24h"
+    - manual: hermes
+  wake_up_delay: 3s
+  auto_sleep_after: 20m
+
+responsibilities:
+  - Root cause analysis (стектрейс → причина)
+  - Flaky test pattern detection
+  - Race condition анализ
+  - Memory / deadlock анализ
+  - Корреляция логов (ERROR → связанные события)
+
+checks:
+  stacktrace_analysis:
+    tool: manual_review
+    output: "root_cause + fix_suggestion"
+  flaky_pattern:
+    tool: test_history
+    threshold: "> 2 failures in 24h"
+    output: "pattern + affected tests"
+  log_correlation:
+    tool: grep + jq
+    window: 5m  # окно вокруг ошибки
+  race_condition:
+    tool: thread-safety review
+    triggers: "async/await без await, shared mutable state"
+
+scoring:
+  weight: 12
+  fix_suggestion_required: true  # всегда предлагает исправление
+
+budget:
+  monthly_cents: 800  # $8/мес
+  model: deepseek-chat
+  temperature: 0.0

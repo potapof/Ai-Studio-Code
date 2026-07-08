@@ -1,0 +1,45 @@
+# Holix Security Agent — спящий специалист по безопасности
+# Активируется: метка 'security' в задаче, CRITICAL finding в QCL
+# В спящем режиме: 0 токенов, 0 CPU
+
+holix_profile: security
+mode: dormant
+
+activation:
+  triggers:
+    - task_label: security
+    - task_label: auth
+    - qcl_event: security_critical
+    - manual: hermes
+  wake_up_delay: 5s
+  auto_sleep_after: 10m  # заснуть через 10 мин бездействия
+
+responsibilities:
+  - OWASP Top 10 аудит
+  - Поиск секретов (API-ключи, токены, пароли) в коде
+  - Проверка зависимостей на уязвимости (npm audit, pip audit)
+  - Валидация JWT, CORS, CSP заголовков
+  - SQL injection / XSS анализ
+
+checks:
+  secrets_scan:
+    tool: gitleaks
+    severity: CRITICAL
+  dependency_audit:
+    tool: npm audit / pip-audit
+    severity: HIGH
+  owasp_top10:
+    tool: manual_review
+    severity: HIGH
+  auth_headers:
+    tool: curl
+    severity: MEDIUM
+
+scoring:
+  weight: 15  # вес в общем QCL-скоре
+  critical_finding: immediate_escalation  # CRITICAL → немедленно человеку
+
+budget:
+  monthly_cents: 1200  # $12/мес
+  model: deepseek-chat
+  temperature: 0.0  # максимальная точность
