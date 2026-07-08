@@ -1,0 +1,68 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: YAML syntax check
+        run: |
+          echo "=== Проверка YAML-конфигов ==="
+          errors=0
+          find configs -name "*.yaml" -o -name "*.yml" | while read f; do
+            echo -n "  $f ... "
+            if python3 -c "import yaml; yaml.safe_load(open('$f'))" 2>/dev/null; then
+              echo "OK"
+            else
+              echo "FAIL"
+              exit 1
+            fi
+          done
+          echo "=== Все YAML-конфиги валидны ==="
+
+  validate-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SKILL.md structure
+        run: |
+          echo "=== Проверка навыков ==="
+          errors=0
+          for skill_md in skills/*/SKILL.md; do
+            name=$(basename "$(dirname "$skill_md")")
+            echo -n "  [$name] "
+            frontmatter=$(sed -n '/^---$/,/^---$/p' "$skill_md")
+            if [ -z "$frontmatter" ]; then
+              echo "FAIL: нет frontmatter"
+              errors=$((errors+1))
+              continue
+            fi
+            ok=true
+            for field in name description; do
+              echo "$frontmatter" | grep -q "^${field}:" || { echo "FAIL: нет '$field'"; ok=false; break; }
+            done
+            $ok && echo "OK"
+          done
+          [ $errors -eq 0 ] || { echo "=== $errors ошибок ===" && exit 1; }
+          echo "=== Навыки валидны ==="
+
+  validate-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check docker-compose
+        run: |
+          echo "=== Проверка docker-compose ==="
+          for f in configs/docker/docker-compose.yml docker-compose.yml; do
+            [ -f "$f" ] || continue
+            echo -n "  $f ... "
+            svc=$(grep -c '^  [a-z]' "$f" 2>/dev/null || echo 0)
+            grep -q 'services:' "$f" && echo "OK ($svc service blocks)" || { echo "FAIL"; exit 1; }
+          done
+          echo "=== docker-compose валиден ==="
