@@ -141,3 +141,32 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# --- Studio-specific ---
+# Данные Docker-томов (большие, приватные)
+.hermes/
+.holix/
+.openhands/
+.config/
+syncthing-host/
+/var/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Временные планы
+PLAN*.md
+
