@@ -1,0 +1,252 @@
+# ============================================================================
+# hermes-config.yaml
+# ============================================================================
+# Hermes Agent v0.16+ (Nous Research) — главный оркестратор "Студии
+# программирования" v2.0.
+#
+# Ключевые изменения v2.0:
+#   - Мозгом системы стал PostgreSQL 16 + pgvector + Apache AGE (конвергентная
+#     БД). NocoDB — больше НЕ мозг, только приборная панель (Kanban/CRM/формы).
+#   - Hermes подключается к мозгу через официальный @modelcontextprotocol/
+#     server-postgres (НЕ через NocoDB MCP).
+#   - Stack Overflow for Agents (SOA) подключается как внешний источник знаний
+#     через https://mcp.stackoverflow.com (OAuth 2.1).
+#   - Hermes имеет нативную Skills System (автосохранение из успешного опыта) и
+#     Memory Providers (Postgres + file).
+#   - Команда /handoff генерирует HANDOFF.md по протоколу AHP и сохраняет его в
+#     public.handoff_documents с векторным эмбеддингом.
+#   - Hermes v0.6.0+ может выступать и как MCP-клиент, и как MCP-сервер (для
+#     IDE типа Cursor/Claude Desktop) — двунаправленный MCP.
+#   - Мультитенантность через схемы PostgreSQL studio_<tenant_id>.
+#
+# LLM-провайдер: DeepSeek, модель deepseek-chat, температура 0.4 (баланс
+# точности и креативности для планирования/декомпозиции).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# 1. Профиль агента
+# ---------------------------------------------------------------------------
+profile:
+  name: hermes
+  role: orchestrator
+  description: >
+    Главный оркестратор мультиагентной системы. Отвечает за декомпозицию задач,
+    маршрутизацию подзадач между исполнителями (Holix agents, OpenHands),
+    управление знаниями (внутренние + SOA + GitHub), генерацию HANDOFF.md и
+    арбитраж в Loop Engineering (PASS/FAIL/NEEDS_HUMAN).
+
+# ---------------------------------------------------------------------------
+# 2. LLM-модель
+# ---------------------------------------------------------------------------
+model:
+  provider: deepseek
+  name: deepseek-chat
+  temperature: 0.4          # баланс точности и креативности для планирования
+  max_tokens: 8192
+  timeout: 120              # секунд на один запрос к LLM
+  retry:
+    max_attempts: 3
+    backoff_seconds: 5
+
+# ---------------------------------------------------------------------------
+# 3. Skills System (нативная система навыков Hermes v0.16+)
+# ---------------------------------------------------------------------------
+# Hermes сам создаёт навыки (SKILL.md) из успешно выполненных задач.
+# Навыки сохраняются в /config/skills и в public.skills с векторным эмбеддингом.
+skills_system:
+  skills_dir: /config/skills
+  auto_save_on_success: true           # автосохранение из успешного опыта
+  auto_save_threshold: 0.85            # confidence >= 0.85 для сохранения навыка
+  skill_format: markdown_with_yaml_frontmatter
+  on_conflict: bump_version            # при конфликте имени увеличивать версию
+  review_required: false               # автосохранённые навыки сразу available
+
+# ---------------------------------------------------------------------------
+# 4. Memory Providers (нативная память Hermes)
+# ---------------------------------------------------------------------------
+# Два провайдера: основной — postgres-pgvector (векторный RAG по всем прошлым
+# сессиям и handoff-документам), резервный — файловая память на диске.
+memory_providers:
+  - name: postgres-pgvector
+    type: native_postgres
+    connection_string_env: HERMES_POSTGRES_URL
+    embedding_model: sentence-transformers/all-MiniLM-L6-v2
+    embedding_dimensions: 384
+    table: public.handoff_documents
+    vector_column: embedding
+    content_column: content_markdown
+    metadata_columns: [id, document_type, title, agent_name, tenant_id, created_at]
+    search_top_k: 5
+    search_threshold: 0.7
+
+  - name: file-system
+    type: file
+    path: /config/memory
+    max_size_mb: 500
+    rotation: size_or_daily             # ротация по размеру ИЛИ раз в сутки
+
+# ---------------------------------------------------------------------------
+# 5. MCP-клиент (Hermes подключается к внешним MCP-серверам)
+# ---------------------------------------------------------------------------
+mcp_client:
+  # 5.1. "Мозг" — конвергентная БД PostgreSQL (через официальный postgres MCP)
+  - name: hermes-brain
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres", "${HERMES_POSTGRES_URL}"]
+    enabled: true
+    first_invoke_approval: true          # подтверждение при первом вызове (v0.16+)
+    description: >
+      Подключение к мозгу системы. Hermes получает доступ к таблицам
+      public.skills, public.handoff_documents, public.agent_sessions,
+      public.api_keys_audit, а также к мультитенантным схемам studio_<tenant_id>.
+      Через этот же MCP доступны vector_search (pgvector) и graph_query (AGE Cypher).
+
+  # 5.2. Stack Overflow for Agents (внешний источник проверенных знаний)
+  - name: stackoverflow
+    transport: http
+    url: https://mcp.stackoverflow.com
+    auth: oauth_2_1
+    enabled: true
+    daily_limit: 100                     # бета-лимит SOA
+    cache_ttl_seconds: 3600              # кеш ответов на 1 час для экономии лимита
+    description: >
+      SOA — публичная база проверенных технических знаний. Hermes обращается
+      к ней по общим программистским вопросам (настройка библиотеки, исправление
+      типовой ошибки, анализ stack trace). Маршрутизация — см. knowledge_orchestration.
+
+  # 5.3. GitHub (чтение issue/PR/коммитов, создание веток и PR)
+  - name: github
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}"
+    enabled: true
+
+  # 5.4. Slack (уведомления о loop-завершениях, эскалациях, недельные отчёты)
+  - name: slack
+    transport: stdio
+    command: python
+    args: ["-m", "mcp_server_slack"]
+    env:
+      SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}"
+    enabled: true
+
+  # 5.5. Sentry (чтение нерешённых инцидентов, stacktrace событий)
+  - name: sentry
+    transport: stdio
+    command: python
+    args: ["-m", "mcp_server_sentry"]
+    env:
+      SENTRY_DSN: "${SENTRY_DSN}"
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# 6. MCP-сервер (Hermes как сервер для IDE: Cursor, Claude Desktop)
+# ---------------------------------------------------------------------------
+# Hermes v0.6.0+ умеет быть MCP-сервером. IDE могут подключаться и получать
+# доступ к истории сессий и библиотеке навыков Hermes.
+mcp_server:
+  enabled: true
+  port: 8082
+  expose:
+    - session_history             # история прошлых сессий Hermes
+    - skills_library              # библиотека навыков (public.skills)
+  auth: bearer_token
+  token_env: HERMES_MCP_SERVER_TOKEN
+  cors_origins: []                # пустой = только localhost по умолчанию
+
+# ---------------------------------------------------------------------------
+# 7. Handoff (генерация HANDOFF.md по Agent Handoff Protocol)
+# ---------------------------------------------------------------------------
+# После каждой завершённой задачи Hermes генерирует HandoffPacket и сохраняет
+# его в файл + в public.handoff_documents с векторным эмбеддингом для RAG.
+handoff:
+  enabled: true
+  output_dir: /config/handoffs
+  auto_compress: true             # сжимать длинные контексты в structured_summary
+  format: handoff_packet          # по Agent Handoff Protocol (AHP)
+  save_to_db: true                # сохранять в public.handoff_documents + embedding
+  fields:
+    - task_description
+    - context_summary
+    - decisions_made
+    - lessons_extracted
+    - artifacts
+    - next_actions
+    - outcome
+    - tokens_used
+    - cost_usd
+
+# ---------------------------------------------------------------------------
+# 8. Context Compressor (управление длиной контекста)
+# ---------------------------------------------------------------------------
+context_compressor:
+  enabled: true
+  strategy: structured_summary    # структурированная суммаризация (не простой truncate)
+  trigger_at_tokens: 100000       # сжимать при достижении 100K токенов
+  preserve_recent_messages: 10    # всегда сохранять последние 10 сообщений дословно
+  compression_model: deepseek-chat
+
+# ---------------------------------------------------------------------------
+# 9. Arbiter Protocol (арбитраж в Loop Engineering)
+# ---------------------------------------------------------------------------
+# Hermes — финальный арбитр: принимает решение на основе вердикта Checker'а.
+arbiter_protocol:
+  on_pass: open_pr                # PASS -> открыть Pull Request
+  on_fail: retry_or_escalate      # FAIL -> повторить или эскалировать
+  on_needs_human: escalate_immediately   # NEEDS_HUMAN -> немедленно к человеку
+  max_retries: 3
+  escalation_channel: slack       # уведомление в Slack при эскалации
+
+# ---------------------------------------------------------------------------
+# 10. Knowledge Orchestration (гибридная маршрутизация знаний)
+# ---------------------------------------------------------------------------
+# Приоритет источников: сначала внутренние знания (Postgres), затем SOA
+# (общие программистские вопросы), затем GitHub (issue/PR/код).
+knowledge_orchestration:
+  default_priority:
+    - internal                    # postgres (мозг + handoff_documents + skills)
+    - soa                         # Stack Overflow for Agents
+    - github                      # репозитории проекта
+  routing_rules:
+    - pattern: "общие вопросы программирования|настройка библиотеки|как исправить ошибку"
+      source: soa
+    - pattern: "архитектура|зависимости|наш код|наш проект|спецификация"
+      source: internal
+    - pattern: "issue|PR|commit|ветка"
+      source: github
+  fallback: internal              # при недоступности SOA — внутренние знания
+  deduplicate: true               # дедупликация ответов из нескольких источников
+
+# ---------------------------------------------------------------------------
+# 11. Лимиты (токены, запросы, стоимость, SOA)
+# ---------------------------------------------------------------------------
+limits:
+  max_tokens_per_hour: 200000
+  max_requests_per_minute: 30
+  daily_cost_usd_limit: 20.00
+  soa_daily_calls_limit: 80       # запас от бета-лимита SOA (100)
+  context_window_tokens: 128000   # окно контекста deepseek-chat
+
+# ---------------------------------------------------------------------------
+# 12. Healthcheck
+# ---------------------------------------------------------------------------
+healthcheck:
+  command: "hermes healthcheck"
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  on_failure: restart_container   # Docker restart policy
+
+# ---------------------------------------------------------------------------
+# 13. Логирование
+# ---------------------------------------------------------------------------
+logging:
+  level: info                     # debug | info | warn | error
+  format: json
+  destination: /var/log/hermes/agent.log
+  rotate_size_mb: 100
+  rotate_keep: 7
+  sanitize_secrets: true          # маскировать sk-*, ghp_*, xox*, ${*_TOKEN}
