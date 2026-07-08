@@ -231,7 +231,36 @@ limits:
   context_window_tokens: 128000   # окно контекста deepseek-chat
 
 # ---------------------------------------------------------------------------
-# 12. Healthcheck
+# 12. Memory Pointers — оптимизация контекста (экономия 7-10x токенов)
+# ---------------------------------------------------------------------------
+# Вместо загрузки целых файлов агент использует pointer-протокол:
+#   #SCAN[pointer://dir/]      — оглавление директории (100 токенов)
+#   #SUMMARIZE[pointer://f.ts]  — сигнатуры + экспорты (200 токенов)
+#   #FETCH[pointer://f.ts:1-50] — конкретные строки (50 токенов)
+#
+# Правило: файлы >500 строк — pointer, файлы ≤500 строк — полная загрузка.
+memory_pointers:
+  enabled: true
+  large_file_threshold_lines: 500
+  tiered_retrieval:
+    level_1_overview:
+      tool: SCAN
+      max_tokens: 100
+      description: "Оглавление директории — имена файлов + экспорты"
+    level_2_summary:
+      tool: SUMMARIZE
+      max_tokens: 200
+      description: "Сводка файла — сигнатуры функций, зависимости"
+    level_3_fetch:
+      tool: FETCH
+      max_tokens: 50
+      description: "Конкретные строки по диапазону"
+    level_4_full:
+      tool: fallback
+      description: "Полный файл — только если pointer недостаточно"
+
+# ---------------------------------------------------------------------------
+# 13. Healthcheck
 # ---------------------------------------------------------------------------
 healthcheck:
   command: "hermes healthcheck"
@@ -241,7 +270,7 @@ healthcheck:
   on_failure: restart_container   # Docker restart policy
 
 # ---------------------------------------------------------------------------
-# 13. Логирование
+# 14. Логирование
 # ---------------------------------------------------------------------------
 logging:
   level: info                     # debug | info | warn | error
