@@ -154,7 +154,7 @@ services:
     depends_on:
       - postgres-db
     working_dir: /workspace
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - LLM_MODEL=deepseek-v4-flash
@@ -181,7 +181,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-coordinator
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -215,7 +215,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-archivist
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -250,7 +250,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-backend-lead
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -283,7 +283,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-frontend-lead
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -316,7 +316,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-qa
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -348,7 +348,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-loop-checker
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -380,7 +380,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-lint
     restart: unless-stopped
-    command: ["holix", "gateway", "start", "--foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
