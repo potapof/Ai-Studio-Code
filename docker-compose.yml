@@ -129,7 +129,9 @@ services:
     depends_on:
       - postgres-db
     environment:
-      - LLM_API_KEY=${OPENAI_API_KEY:-${DEEPSEEK_API_KEY:-}}
+      - LLM_API_KEY=${DEEPSEEK_API_KEY}
+      - LLM_MODEL=deepseek-chat
+      - LLM_BASE_URL=https://api.deepseek.com
       - SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:main
     volumes:
       - /home/potapof/ai-studio/openhands/workspace:/app/workspace
