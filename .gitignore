@@ -170,3 +170,9 @@ Thumbs.db
 # Временные планы
 PLAN*.md
 
+
+# Бэкапы конфигов и БД (не в Git)
+backups/
+*.bak.*
+*.split.bak.*
+*.deprecated_*
