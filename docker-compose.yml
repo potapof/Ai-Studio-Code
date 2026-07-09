@@ -130,7 +130,7 @@ services:
       - postgres-db
     environment:
       - LLM_API_KEY=${DEEPSEEK_API_KEY}
-      - LLM_MODEL=deepseek-chat
+      - LLM_MODEL=deepseek-v4-flash
       - LLM_BASE_URL=https://api.deepseek.com
       - SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:main
     volumes:
@@ -157,6 +157,7 @@ services:
     command: ["holix", "gateway", "start", "--foreground"]
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - LLM_MODEL=deepseek-v4-flash
       - HERMES_DASHBOARD_ENABLED=true
       - HERMES_DASHBOARD_HOST=0.0.0.0
       - HERMES_DASHBOARD_PORT=8022
@@ -190,7 +191,7 @@ services:
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.2"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
@@ -224,7 +225,7 @@ services:
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.3"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
@@ -259,7 +260,7 @@ services:
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.4"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
@@ -292,7 +293,7 @@ services:
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.4"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
@@ -324,7 +325,7 @@ services:
       HOLIX_CONFIG_PATH: /config/config.yaml
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
@@ -356,7 +357,7 @@ services:
       HOLIX_CONFIG_PATH: /config/config.yaml
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
@@ -388,7 +389,7 @@ services:
       HOLIX_CONFIG_PATH: /config/config.yaml
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
-      LLM_MODEL: deepseek-chat
+      LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
     volumes:
