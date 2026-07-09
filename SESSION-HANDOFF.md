@@ -54,7 +54,8 @@ hermes mcp test postgres               # проверка MCP
 ```
 
 ## Что осталось (не критично)
-- Apache AGE не установлен (только vector/pg_trgm/pgcrypto) — графовые функции недоступны; фикс = свой образ + пересоздание БД
+- Apache AGE УСТАНОВЛЕН (образ studio-postgres:pg16-age-vector, age 1.5.0 + vector 0.8.3, графы code_graph/task_graph). Dockerfile: ~/studio/docker/postgres-age/
+- ⚠️ examples/sql/04-code-graph.sql имеет баги совместимости с AGE 1.5.0 (helper-функции find_*): cypher() 3-й аргумент требует параметр-литерал; `[x|...]` list-comprehension не поддерживается; триггер ждёт колонку updated_at. Ядро AGE (расширение+графы+Cypher) работает; helper-слой требует правки отдельно.
 - hermes-ceo (ghcr.io/nousresearch/hermes-agent) образ недоступен — Hermes работает на хосте, контейнер не нужен
 - Секреты в .env стоит ротировать (ключ засветился в старом compose)
 - MCP docker-обёртка иногда оставляет осиротевшие контейнеры при жёстком завершении — периодически чистить

@@ -73,7 +73,7 @@ services:
   # МОЗГ: PostgreSQL 16 + pgvector  (данные — реальный путь ai-studio)
   # =====================================================================
   postgres-db:
-    image: pgvector/pgvector:pg16
+    image: studio-postgres:pg16-age-vector
     container_name: nocodb-postgres-db
     restart: unless-stopped
     environment:
