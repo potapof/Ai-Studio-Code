@@ -151,16 +151,16 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-backend-executor
     restart: unless-stopped
+    env_file: .env
     depends_on:
       - postgres-db
     working_dir: /workspace
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - LLM_MODEL=deepseek-v4-flash
-      - HERMES_DASHBOARD_ENABLED=true
-      - HERMES_DASHBOARD_HOST=0.0.0.0
-      - HERMES_DASHBOARD_PORT=8022
+      - HOLIX_GATEWAY_HOST=0.0.0.0
+      - HOLIX_GATEWAY_PORT=8000
       - TZ=${TZ:-Europe/Moscow}
     volumes:
       - /home/potapof/ai-studio/holix/backend/.holix:/root/.holix
@@ -181,21 +181,31 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-coordinator
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    ports:
+      - "127.0.0.1:8010:8000"   # gateway coordinator на хост (Hermes-compat); 8000 занят portainer
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: coordinator
       HOLIX_CONFIG_PATH: /config/config.yaml
+      AUTO_SUMMARIZE_CONVERSATIONS: "false"   # не суммаризировать после ответа (пост-обработка виснет) — воркер-исполнитель
+      ENABLE_LONG_TERM_MEMORY: "false"        # LTM/эмбеддинги ведёт Hermes на хосте
+      OMP_NUM_THREADS: "1"                     # КРИТИЧНО: onnxruntime без тред-трэшинга на cpus:1 (иначе создание ONNX-сессии для эмбеддинга виснет минутами)
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.2"
+      NON_INTERACTIVE: "true"          # агент в gateway-режиме не ждёт подтверждений (chat/completions не зависает)
+      CONFIRMATION_TIMEOUT: "60"       # фоллбэк: 60с на любой confirm вместо вечного ожидания
       TZ: ${TZ:-Europe/Moscow}
     volumes:
       - ./examples/configs/holix-coordinator.yaml:/config/config.yaml:ro
+      - /home/potapof/ai-studio/holix/coordinator/.holix:/root/.holix   # постоянный (auth,конфиг,память)
       - holix_coordinator_data:/workspace
       - /tmp/holix-worktrees:/worktrees
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -207,15 +217,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1'
+          memory: 2G
+          cpus: '6'
     logging: *default-logging
 
   holix-archivist:
     image: ai-studio-holix-backend:latest
     container_name: holix-archivist
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -250,7 +260,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-backend-lead
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -283,7 +293,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-frontend-lead
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -316,7 +326,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-qa
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -348,7 +358,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-loop-checker
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -380,7 +390,7 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-lint
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
