@@ -176,3 +176,4 @@ backups/
 *.bak.*
 *.split.bak.*
 *.deprecated_*
+.holix-hermes-key.txt

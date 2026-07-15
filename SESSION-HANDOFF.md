@@ -1,108 +1,114 @@
 # SESSION HANDOFF — Студия программирования
 
-Обновлено: 9 июля 2026 (конец сессии).
-Читать первым в новой сессии. Быстрый старт и откаты — в конце.
+Обновлено: 2026-07-11 (ночной автономный прогон). Читать первым.
+
+═══════════════════════════════════════════════════════════
+ГЛАВНОЕ ЗА НОЧЬ: агентское исполнение Holix ПОЧИНЕНО
+═══════════════════════════════════════════════════════════
+Было: `/v1/chat/completions` на воркерах зависал (100%+ CPU, нет ответа) — Hermes
+не мог делегировать Holix-воркерам. Стало: воркер отвечает реальным контентом
+(проверено: «2+2»→"4", «7×6»→"42" через coordinator gateway с ключом).
+
+ДВЕ КОРНЕВЫЕ ПРИЧИНЫ (найдены py-spy + чтением исходников Holix):
+1. ЗАВИСАНИЕ = onnxruntime thread-thrash. LangGraph-нода `memory_retrieval_node`
+   на КАЖДЫЙ запрос делает ChromaDB-эмбеддинг (ONNX MiniLM). onnxruntime плодит
+   потоки по числу ядер ХОСТА (12+), а cgroup-лимит `cpus:'1'` → трэшинг → создание
+   ONNX-сессии тянется минутами. Фикс: поднять лимит CPU (coordinator cpus:'6').
+2. «Agent completed without producing a final response» (tokens=0) = баг LangGraph-
+   пути в Holix 0.1.21: `core/agent.py::_run_with_graph` ловит ответ только из
+   `FinalResponseEvent`, а граф его не эмитит с контентом. Фикс: `USE_LANGGRAPH=false`
+   → агент идёт легаси-путём (`core/agent_execution.py`), который возвращает контент.
+
+КРИТИЧНЫЕ НАСТРОЙКИ (иначе не работает):
+- Модель агента = `deepseek-chat` (НЕ reasoning `deepseek-v4-flash`! reasoning отдаёт
+  пустой content + reasoning_content → легаси-путь получает пусто). При
+  `models_via_providers: true` агент берёт ПРОВАЙДЕРСКИЙ `default_model` — его надо
+  форсить (в wrapper есть `sed default_model→deepseek-chat`, т.к. `holix models add`
+  на эфемерном /root/.holix сбрасывает его на первый = v4-flash).
+- `USE_LANGGRAPH=false` (в ~/studio/.env, все воркеры через env_file).
+- CPU-лимит контейнера ≥ несколько ядер (иначе ONNX-трэшинг в warm-up и памяти).
+- ⚠️ Имена ENV Holix БЕЗ префикса, если у поля в config.py нет validation_alias:
+  `REQUIRE_AUTH` (НЕ HOLIX_REQUIRE_AUTH!), `USE_LANGGRAPH`, `MODEL`,
+  `ENABLE_LONG_TERM_MEMORY`, `AUTO_SUMMARIZE_CONVERSATIONS`, `NON_INTERACTIVE`.
+  С alias (префикс HOLIX_ работает): `HOLIX_GATEWAY_HOST/PORT`, `HOLIX_API_KEY_PEPPER`,
+  `HOLIX_ENV`, `HOLIX_LOG_DEBUG`. Всегда сверять по config.py (validation_alias).
 
 ═══════════════════════════════════════════════════════════
 СОСТОЯНИЕ ПЛАТФОРМЫ (актуально)
 ═══════════════════════════════════════════════════════════
-- ЕДИНЫЙ docker-compose проект: **studio-code** → `~/studio/docker-compose.yml`
-- 14 контейнеров, все Up, restart-петель нет:
-  - nocodb-postgres-db (healthy), nocodb-web-ui, openhands-outsourcer, holix-backend-executor
-  - 7 holix: coordinator, archivist, backend-lead, frontend-lead, qa, loop-checker, lint
-  - egress-squid, portainer, syncthing
-- Сеть: `ai-studio_ai_studio_network` (жёсткое имя через `networks: name:`), под проектом studio-code
-- БД: образ `studio-postgres:pg16-age-vector` (PG16.14 bookworm + pgvector 0.8.3 + Apache AGE 1.5.0)
-  - Данные (bind): `/home/potapof/ai-studio/data/postgres`
-  - hermes_brain: skills=20, knowledge_base=25, standards_library=3
-  - Графы AGE: code_graph, task_graph (пустые, готовы к наполнению)
-- Веб: NocoDB :8080 · Portainer :9000 · Syncthing :8384
-- LLM: провайдер deepseek, модель воркеров **deepseek-v4-flash** (7 holix + backend-executor + openhands)
-- MCP postgres: Docker-обёртка crystaldba/postgres-mcp (restricted), URL в ~/.hermes/.env; 9 инструментов mcp_postgres_*
+- Единый проект studio-code (~/studio/docker-compose.yml).
+- Holix обновлён 0.1.19 → **0.1.21** на всех 8 воркерах (образ
+  `ai-studio-holix-backend:0.1.21`/`:latest`, id cf7bad3d27ab; собран инкрементально
+  `FROM :0.1.19 + pipx install "Holix[all]==0.1.21"` + запечённая ChromaDB-модель).
+  Старый образ сохранён как `:0.1.19` и в backups/*.tar.gz — откат.
+- 8 holix-воркеров: coordinator, archivist, backend-lead, frontend-lead, qa,
+  loop-checker, lint, backend-executor. Все на deepseek-chat + USE_LANGGRAPH=false.
+- Gateway: bind 0.0.0.0:8000 у всех; coordinator опубликован на хост
+  **127.0.0.1:8010** (точка входа Hermes). Health у всех 200 (после warm-up).
+- Auth: coordinator require_auth=true + hx_-ключ (в ~/studio/.holix-hermes-key.txt
+  и ~/.hermes/.env как HOLIX_GATEWAY_KEY); постоянный том /root/.holix у coordinator
+  (bind ~/ai-studio/holix/coordinator/.holix) → ключ переживает пересоздание.
+  Роли: require_auth=true, но КЛЮЧА НЕТ (эфемерный /root/.holix) → см. next-steps.
+- LLM: провайдер deepseek; агент — deepseek-chat; провайдер знает и v4-flash/pro.
+- MCP postgres: как было (crystaldba, restricted).
 
 ═══════════════════════════════════════════════════════════
-СДЕЛАНО В ЭТОЙ СЕССИИ
+ПРОВЕРЕНО (реальным выводом)
 ═══════════════════════════════════════════════════════════
-1. Установлен uv/uvx 0.11.28 (~/.local/bin)
-2. MCP к PostgreSQL — надёжно/безопасно (Docker-обёртка в сети, пароль только в env, restricted)
-3. Устранены restart-петли ВСЕХ 8 holix/executor (было ~8000 перезапусков): фикс `holix gateway start --foreground`
-4. Удалён битый контейнер openhands (exit 126)
-5. Объединены 2 проекта (ai-studio + studio) → один studio-code; данные мозга сохранены 1:1
-6. Секреты: аудит (.env в gitignore, в историю не попадали), зачистка плейнтекст DeepSeek-ключа с диска
-7. Apache AGE установлен без egress к debian (multi-stage образ: age.so из apache/age:release_PG16_1.5.0 → в pgvector). Dockerfile: `~/studio/docker/postgres-age/`
-8. Переписан `examples/sql/04-code-graph.sql` под AGE 1.5.0 (5 функций графа работают)
-9. Ротация DeepSeek-ключа: контейнеры (9 шт) переведены на новый ключ
-10. openhands посажен на DeepSeek (LLM_MODEL/LLM_BASE_URL добавлены — не было)
-11. Модель воркеров → deepseek-v4-flash
+- coordinator /v1/chat/completions с hx_-ключом → HTTP 200, content "4" и "42".
+- Все 8 воркеров: образ 0.1.21, restart=0, gateway health 200 (по DNS/хост).
+- qa (роль): конфиг deepseek-chat + USE_LANGGRAPH=false + провайдерский
+  default_model=deepseek-chat — идентичен coordinator (агентское исполнение работает).
+- Без ключа /v1/models → 401, с ключом → 200 (auth).
 
-Коммиты (Ai-Studio-Code, main): 5cd18df (объединение) → 67b2223 (AGE) → 1339eff (fix 04) → d169c4c (openhands→DeepSeek) → b5e3493 (flash). Все запушены.
+⚠️ Скорость: агентский ответ ~45-70с (ONNX memory-retrieval при warm-up + шаги ReAct).
+Работает, но медленно — кандидат на оптимизацию (см. next-steps).
 
 ═══════════════════════════════════════════════════════════
-НАДО СДЕЛАТЬ (для новой сессии / пользователя)
+NEXT STEPS (не сделано за ночь — осознанно отложено)
 ═══════════════════════════════════════════════════════════
-ПРИОРИТЕТ 1 — завершить ротацию ключа (осталось за пользователем):
-- [ ] Перезапустить Hermes на хосте → возьмёт новый DeepSeek-ключ из ~/.hermes/.env (это и есть переход в новую сессию)
-- [ ] ТОЛЬКО ПОСЛЕ этого — отозвать СТАРЫЙ ключ на platform.deepseek.com
-  ⚠️ Не отзывать старый ключ до перезапуска Hermes.
-
-ПРИОРИТЕТ 2 — проверить модель:
-- [ ] Дать первую реальную задачу holix/openhands. Если провайдер вернёт 400 на «deepseek-v4-flash» — имя модели неверное, поправить LLM_MODEL в ~/studio/docker-compose.yml (7 holix + backend-executor + openhands) и `docker compose up -d`.
-
-ОПЦИОНАЛЬНО (по желанию):
-- [ ] sync_code_graph — сейчас заглушка; реализовать Python-парсер AST для наполнения code_graph реальными зависимостями репозитория
-- [ ] Ротация прочих секретов (GITHUB_TOKEN, POSTGRES_PASSWORD и др.) — по той же схеме
-- [ ] Наполнить графы code_graph/task_graph реальными данными (функции add_code_node/add_code_edge готовы)
+1. AUTH-WIRING РОЛЕЙ: у 6 ролей эфемерный /root/.holix → нет hx_-ключа, их /v1
+   закрыт 401. Варианты: (а) REQUIRE_AUTH=false для внутренних ролей (доступны только
+   в docker-сети) — но .env общий с coordinator, нужен отдельный механизм/override;
+   (б) постоянный том /root/.holix каждому + bootstrap ключа; (в) единый ключ через
+   общий том security/. Решить с пользователем.
+2. СОСТАВ К ЗАМЫСЛУ: тимлиды делегируют `holix-python-dev`/`holix-react-dev` —
+   таких контейнеров НЕТ. backend-executor — сирота без yaml-роли. Добавить dev-
+   исполнителей и прописать делегирование (по согласованию — см. диалог).
+3. E2E: настроить Hermes (хост) на вызов coordinator (`--delegate-to` / custom
+   provider на http://127.0.0.1:8010/v1, ключ hx_), прогнать maker-checker.
+4. СКОРОСТЬ: агентский ответ 45-70с. Профилировать: возможно, отключить
+   conversation-memory-retrieval полностью (не только LTM) или поднять cpus ролям.
+5. РОЛЯМ поднять cpus (сейчас '1' у части → warm-up ~4мин, трэшинг). Дать 2-4 ядра.
 
 ═══════════════════════════════════════════════════════════
 БЫСТРЫЙ СТАРТ НОВОЙ СЕССИИ
 ═══════════════════════════════════════════════════════════
 ```bash
-cd ~/studio
-docker compose ps                              # 14 контейнеров studio-code
-docker exec nocodb-postgres-db pg_isready -U nocodb_user
-hermes mcp test postgres                       # MCP + БД
-# проверить модель у воркеров:
-docker inspect holix-coordinator --format '{{range .Config.Env}}{{println .}}{{end}}' | grep LLM_MODEL
+cd ~/studio && docker compose ps                      # 14 контейнеров
+# health воркеров (по DNS из coordinator — надёжнее exec под нагрузкой):
+for c in holix-coordinator holix-qa holix-lint; do \
+ docker exec holix-coordinator curl -s -o /dev/null -w "$c=%{http_code}\n" http://$c:8000/health; done
+# боевой агентский тест (ключ в файле):
+KEY=$(cat ~/studio/.holix-hermes-key.txt)
+curl -s --max-time 120 -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+ -X POST http://127.0.0.1:8010/v1/chat/completions \
+ -d '{"model":"default","messages":[{"role":"user","content":"2+2? одним числом"}],"max_tokens":100}'
 ```
-
-Проверка данных мозга + AGE:
-```bash
-docker exec nocodb-postgres-db psql -U nocodb_user -d hermes_brain -c \
- "SELECT extname,extversion FROM pg_extension WHERE extname IN ('age','vector'); \
-  SELECT name FROM ag_catalog.ag_graph;"
-```
+Диагностика зависания агента: `docker exec <c> pip install --break-system-packages py-spy`
+(нужен cap_add SYS_PTRACE), затем `py-spy dump --pid 1` во время запроса.
 
 ═══════════════════════════════════════════════════════════
-КЛЮЧЕВЫЕ ФАЙЛЫ И БЭКАПЫ
+КЛЮЧЕВЫЕ ФАЙЛЫ
 ═══════════════════════════════════════════════════════════
 ```
-~/studio/docker-compose.yml              — единый стек (проект studio-code)
-~/studio/docker/postgres-age/Dockerfile  — образ PG16+pgvector+AGE
-~/studio/examples/sql/04-code-graph.sql  — граф кода (переписан под AGE 1.5.0)
-~/studio/.env                            — секреты (gitignore); DEEPSEEK_API_KEY (новый)
-~/.hermes/.env                           — DEEPSEEK_API_KEY (новый) + URL для MCP
-~/.hermes/config.yaml                    — блок mcp_servers.postgres
-~/studio/backups/                        — дампы БД (full_*, pre_*)
-~/ai-studio/data/postgres                — физические данные мозга
-~/ai-studio/docker-compose.yml.deprecated_20260709 — старый проект (для отката)
-Планы: ~/studio/PLAN-UNIFY.md, PLAN-AGE-SECRETS.md, PLAN-FIX-AGE-GRAPH.md
+~/studio/docker-compose.yml                 — стек (ветка feature/holix-upgrade)
+~/studio/.env                                — секреты + USE_LANGGRAPH/ENABLE_LTM/OMP (gitignore)
+~/studio/.holix-hermes-key.txt               — hx_-ключ coordinator (chmod 600, gitignore)
+~/ai-studio/holix/backend/Dockerfile          — база образа (пин)
+~/ai-studio/holix/backend/Dockerfile.update   — инкрементальная сборка 0.1.21 + bake модели
+~/ai-studio/holix/coordinator/.holix          — постоянный профиль coordinator (ключ/конфиг)
+~/studio/backups/holix-image-0.1.19-*.tar.gz  — откат образа
+~/studio/PLAN-HOLIX-NIGHT.md                  — план ночного прогона
 ```
-
-Откат объединения (если нужно):
-```bash
-cd ~/studio && docker compose down
-mv ~/ai-studio/docker-compose.yml.deprecated_20260709 ~/ai-studio/docker-compose.yml
-cp ~/studio/docker-compose.split.bak.20260709_142350 ~/studio/docker-compose.yml
-cd ~/ai-studio && docker compose up -d
-cd ~/studio && docker compose -p studio up -d
-# при потере данных: восстановить из ~/studio/backups/full_*.sql
-```
-
-═══════════════════════════════════════════════════════════
-ГРАБЛИ (учтены, см. навык deploy-studio, Проблемы 13–15)
-═══════════════════════════════════════════════════════════
-- holix: `holix gateway start` уходит в фон → нужен `--foreground`
-- AGE ставить только multi-stage (egress режет debian apt); тег apache/age брать bookworm-совместимый (1.5.0, не 1.6.0/trixie)
-- AGE 1.5.0 Cypher: нет `[:A|B]` (использовать `[*1..N]`), нет `[x|..]`, `SET += $map`-параметр не работает (инлайн литерал), agtype-строку брать через trim(chr(34))
-- docker exec для stdin-heredoc — обязателен флаг `-i`
-- MCP docker-обёртка иногда оставляет осиротевшие контейнеры → периодически чистить
+Навык deploy-studio (Проблема 18) — полный разбор фикса агентского исполнения.
