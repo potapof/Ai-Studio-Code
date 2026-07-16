@@ -31,6 +31,8 @@ volumes:
   holix_archivist_data:
   holix_backend_lead_data:
   holix_frontend_lead_data:
+  holix_python_dev_data:
+  holix_react_dev_data:
   holix_qa_data:
   holix_loop_checker_data:
   holix_lint_data:
@@ -158,6 +160,7 @@ services:
     command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - REQUIRE_AUTH=false   # внутренний воркер: доступ только из docker-сети, вход с auth — coordinator
       - LLM_MODEL=deepseek-v4-flash
       - HOLIX_GATEWAY_HOST=0.0.0.0
       - HOLIX_GATEWAY_PORT=8000
@@ -171,7 +174,7 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1'
+          cpus: '2'
     logging: *default-logging
 
   # =====================================================================
@@ -232,6 +235,7 @@ services:
     environment:
       HOLIX_PROFILE: archivist
       HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
@@ -253,7 +257,7 @@ services:
       resources:
         limits:
           memory: 2G
-          cpus: '1'
+          cpus: '2'
     logging: *default-logging
 
   holix-backend-lead:
@@ -267,6 +271,7 @@ services:
     environment:
       HOLIX_PROFILE: backend-lead
       HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
@@ -286,7 +291,7 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1'
+          cpus: '2'
     logging: *default-logging
 
   holix-frontend-lead:
@@ -300,6 +305,7 @@ services:
     environment:
       HOLIX_PROFILE: frontend-lead
       HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
@@ -319,7 +325,73 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1'
+          cpus: '2'
+    logging: *default-logging
+
+  holix-python-dev:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-python-dev
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: python-dev
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.2"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-python-dev.yaml:/config/config.yaml:ro
+      - holix_python_dev_data:/workspace
+      - /tmp/holix-worktrees:/worktrees
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.45
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    logging: *default-logging
+
+  holix-react-dev:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-react-dev
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: react-dev
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.2"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-react-dev.yaml:/config/config.yaml:ro
+      - holix_react_dev_data:/workspace
+      - /tmp/holix-worktrees:/worktrees
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.46
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
     logging: *default-logging
 
   holix-qa:
@@ -333,6 +405,7 @@ services:
     environment:
       HOLIX_PROFILE: qa
       HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
       LLM_MODEL: deepseek-v4-flash
@@ -351,7 +424,7 @@ services:
       resources:
         limits:
           memory: 2G
-          cpus: '2'
+          cpus: '3'
     logging: *default-logging
 
   holix-loop-checker:
@@ -365,6 +438,7 @@ services:
     environment:
       HOLIX_PROFILE: loop-checker
       HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
       LLM_MODEL: deepseek-v4-flash
@@ -383,7 +457,7 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1'
+          cpus: '2'
     logging: *default-logging
 
   holix-lint:
@@ -397,6 +471,7 @@ services:
     environment:
       HOLIX_PROFILE: lint
       HOLIX_CONFIG_PATH: /config/config.yaml
+      REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
       LLM_API_KEY: ${DEEPSEEK_API_KEY}
       LLM_MODEL: deepseek-v4-flash
@@ -415,7 +490,7 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '0.5'
+          cpus: '1'
     logging: *default-logging
 
   # =====================================================================

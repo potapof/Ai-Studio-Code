@@ -1,6 +1,34 @@
 # SESSION HANDOFF — Студия программирования
 
-Обновлено: 2026-07-11 (ночной автономный прогон). Читать первым.
+Обновлено: 2026-07-16 (прогон auth-wiring + dev-исполнители). Читать первым.
+
+═══════════════════════════════════════════════════════════
+СДЕЛАНО 2026-07-16 (после мержа PR #1, main=a8c38a2)
+═══════════════════════════════════════════════════════════
+План прогона: PLAN-AUTH-DEVS-E2E.md. Выполнено и ПРОВЕРЕНО реальным выводом:
+1. AUTH-WIRING (вариант «а» из next-steps): REQUIRE_AUTH=false в environment
+   всех ВНУТРЕННИХ воркеров (7 старых + 2 новых). Coordinator НЕ тронут —
+   остался единственной точкой входа с auth (hx_-ключ, порт 127.0.0.1:8010).
+   Проверка: все роли /v1/models → 200 БЕЗ ключа изнутри docker-сети;
+   coordinator без ключа → 401. Роли на хост не опубликованы.
+2. CPU-ЛИМИТЫ подняты: archivist/backend-lead/frontend-lead/loop-checker/
+   backend-executor 1→2, qa 2→3, lint 0.5→1 (coordinator 6 как был). Хост 28 ядер.
+   Подтверждено docker inspect NanoCpus. RestartCount=0 у всех после пересоздания.
+3. НОВЫЕ DEV-ИСПОЛНИТЕЛИ (состав к замыслу): holix-python-dev (172.20.0.45),
+   holix-react-dev (172.20.0.46). Конфиги examples/configs/holix-python-dev.yaml
+   и holix-react-dev.yaml (role=executor, deepseek-chat, t=0.2). Wrapper-command
+   как у остальных → в профиле model: deepseek-chat, default_provider: deepseek
+   (проверено в /root/.holix). Тома holix_python_dev_data / holix_react_dev_data,
+   /worktrees rw. Теперь 16 контейнеров (было 14).
+   Бэкап compose: docker-compose.yml.bak-20260715.
+
+4. E2E ПРОВЕРЕН: Hermes(хост)→coordinator /v1/chat/completions с hx_-ключом →
+   HTTP 200, «15*4»→"60" (65с); holix-python-dev изнутри БЕЗ ключа → HTTP 200,
+   «7+8»→"15" (141с, первый запрос с warm-up). Оба dev-воркера /v1/models=200.
+
+ОСТАЛОСЬ:
+- Прописать делегирование lead→dev в конфигах Holix (пока только yaml-описание).
+- Скорость агентского ответа (45-140с) — кандидат на оптимизацию.
 
 ═══════════════════════════════════════════════════════════
 ГЛАВНОЕ ЗА НОЧЬ: агентское исполнение Holix ПОЧИНЕНО
