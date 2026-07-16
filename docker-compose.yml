@@ -139,6 +139,7 @@ services:
       - "127.0.0.1:3000:3000"   # OpenHands API для Hermes
     volumes:
       - /home/potapof/ai-studio/openhands/workspace:/app/workspace
+      - /var/run/docker.sock:/var/run/docker.sock   # DinD: sandbox-контейнеры для исполнения задач
     networks:
       ai_studio_net:
       studio-net:
