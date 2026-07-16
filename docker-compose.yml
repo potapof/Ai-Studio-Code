@@ -135,10 +135,13 @@ services:
       - LLM_MODEL=deepseek-v4-flash
       - LLM_BASE_URL=https://api.deepseek.com
       - SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:main
+    ports:
+      - "127.0.0.1:3000:3000"   # OpenHands API для Hermes
     volumes:
       - /home/potapof/ai-studio/openhands/workspace:/app/workspace
     networks:
       ai_studio_net:
+      studio-net:
     deploy:
       resources:
         limits:
