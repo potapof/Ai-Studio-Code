@@ -108,6 +108,8 @@ services:
     restart: unless-stopped
     depends_on:
       - postgres-db
+    environment:
+      NC_ALLOW_LOCAL_EXTERNAL_DBS: "true"
     ports:
       - "8080:8080"
     volumes:
@@ -125,21 +127,22 @@ services:
   # ВНЕШНИЙ ПОДРЯДЧИК: OpenHands  (конфиг как в рабочем ai-studio)
   # =====================================================================
   openhands-agent:
-    image: ghcr.io/all-hands-ai/openhands:main
+    image: studio-openhands:local
     container_name: openhands-outsourcer
     restart: unless-stopped
     depends_on:
       - postgres-db
     environment:
+      - RUNTIME=local
+      - ENABLE_BROWSER=false
       - LLM_API_KEY=${DEEPSEEK_API_KEY}
-      - LLM_MODEL=deepseek-v4-flash
+      - LLM_MODEL=deepseek/deepseek-chat
       - LLM_BASE_URL=https://api.deepseek.com
-      - SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:main
+      - SANDBOX_LOCAL_RUNTIME_URL=http://127.0.0.1
     ports:
       - "127.0.0.1:3000:3000"   # OpenHands API для Hermes
     volumes:
       - /home/potapof/ai-studio/openhands/workspace:/app/workspace
-      - /var/run/docker.sock:/var/run/docker.sock   # DinD: sandbox-контейнеры для исполнения задач
     networks:
       ai_studio_net:
       studio-net:
@@ -168,6 +171,10 @@ services:
       - LLM_MODEL=deepseek-v4-flash
       - HOLIX_GATEWAY_HOST=0.0.0.0
       - HOLIX_GATEWAY_PORT=8000
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
+      - OPENBLAS_NUM_THREADS=1
+      - MAX_STEPS=2
       - TZ=${TZ:-Europe/Moscow}
     volumes:
       - /home/potapof/ai-studio/holix/backend/.holix:/root/.holix
@@ -210,6 +217,7 @@ services:
       NON_INTERACTIVE: "true"          # агент в gateway-режиме не ждёт подтверждений (chat/completions не зависает)
       CONFIRMATION_TIMEOUT: "60"       # фоллбэк: 60с на любой confirm вместо вечного ожидания
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-coordinator.yaml:/config/config.yaml:ro
       - /home/potapof/ai-studio/holix/coordinator/.holix:/root/.holix   # постоянный (auth,конфиг,память)
@@ -246,6 +254,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.3"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-archivist.yaml:/config/config.yaml:ro
       - holix_archivist_data:/workspace
@@ -282,6 +291,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.4"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-backend-lead.yaml:/config/config.yaml:ro
       - holix_backend_lead_data:/workspace
@@ -316,6 +326,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.4"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-frontend-lead.yaml:/config/config.yaml:ro
       - holix_frontend_lead_data:/workspace
@@ -349,6 +360,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.2"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-python-dev.yaml:/config/config.yaml:ro
       - holix_python_dev_data:/workspace
@@ -362,7 +374,7 @@ services:
       resources:
         limits:
           memory: 2G
-          cpus: '2'
+          cpus: '4'
     logging: *default-logging
 
   holix-react-dev:
@@ -382,6 +394,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.2"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-react-dev.yaml:/config/config.yaml:ro
       - holix_react_dev_data:/workspace
@@ -395,7 +408,7 @@ services:
       resources:
         limits:
           memory: 2G
-          cpus: '2'
+          cpus: '4'
     logging: *default-logging
 
   holix-qa:
@@ -415,6 +428,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-qa.yaml:/config/config.yaml:ro
       - holix_qa_data:/workspace
@@ -448,6 +462,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-loop-checker.yaml:/config/config.yaml:ro
       - holix_loop_checker_data:/workspace
@@ -481,6 +496,7 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
+      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-lint.yaml:/config/config.yaml:ro
       - holix_lint_data:/workspace

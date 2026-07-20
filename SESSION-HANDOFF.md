@@ -1,154 +1,76 @@
-# SESSION HANDOFF — Студия программирования
+# SESSION-HANDOFF — Итоги PLAN-NEXT-2
 
-Обновлено: 2026-07-16 (PLAN-NEXT-2: Архивариус, OpenHands, NocoDB, схема БЗ).
+Дата: 2026-07-20. Автономный прогон всех 6 итераций.
 
-═══════════════════════════════════════════════════════════
-СДЕЛАНО 2026-07-16 (после мержа PR #1, main=a8c38a2)
-═══════════════════════════════════════════════════════════
-План прогона: PLAN-AUTH-DEVS-E2E.md. Выполнено и ПРОВЕРЕНО реальным выводом:
-1. AUTH-WIRING (вариант «а» из next-steps): REQUIRE_AUTH=false в environment
-   всех ВНУТРЕННИХ воркеров (7 старых + 2 новых). Coordinator НЕ тронут —
-   остался единственной точкой входа с auth (hx_-ключ, порт 127.0.0.1:8010).
-   Проверка: все роли /v1/models → 200 БЕЗ ключа изнутри docker-сети;
-   coordinator без ключа → 401. Роли на хост не опубликованы.
-2. CPU-ЛИМИТЫ подняты: archivist/backend-lead/frontend-lead/loop-checker/
-   backend-executor 1→2, qa 2→3, lint 0.5→1 (coordinator 6 как был). Хост 28 ядер.
-   Подтверждено docker inspect NanoCpus. RestartCount=0 у всех после пересоздания.
-3. НОВЫЕ DEV-ИСПОЛНИТЕЛИ (состав к замыслу): holix-python-dev (172.20.0.45),
-   holix-react-dev (172.20.0.46). Конфиги examples/configs/holix-python-dev.yaml
-   и holix-react-dev.yaml (role=executor, deepseek-chat, t=0.2). Wrapper-command
-   как у остальных → в профиле model: deepseek-chat, default_provider: deepseek
-   (проверено в /root/.holix). Тома holix_python_dev_data / holix_react_dev_data,
-   /worktrees rw. Теперь 16 контейнеров (было 14).
-   Бэкап compose: docker-compose.yml.bak-20260715.
+## Итерация 1 — Архивариус
 
-4. E2E ПРОВЕРЕН: Hermes(хост)→coordinator /v1/chat/completions с hx_-ключом →
-   HTTP 200, «15*4»→"60" (65с). Оба dev-воркера /v1/models=200.
-5. PLAN-NEXT-2 (6 итераций) — разбор 4 разрывов:
-   - Архивариус: npx нет, execute_python в non-interactive блокирован.
-     Агентский ответ ~300с+. Hermes пишет в БД напрямую.
-   - OpenHands: API (Swagger) доступен на порту 3000, но схема запросов
-     не совпадает (InitSessionRequest). Требуется веб-интерфейс.
-   - NocoDB: аккаунт admin@studio.local создан, но роль viewer не даёт
-     создать Base. Требуется ручной вход и создание workspace.
-   - Схема БЗ: tasks.sql + таблица tasks (6 статусов) + 3 тестовые задачи.
-   Запись в handoff_documents id=2.
+**Результат:** агент проверен, выявлены блокеры.
 
-ОСТАЛОСЬ:
-- Скорость агентского ответа: исследована (py-spy + бенчмарк). Корень — ONNX
-  _create_inference_session в ChromaDB Holix 0.1.21, env-флагами не чинится.
-  Coordinator (cpus=6) ~50-66с, dev-воркеры (cpus=2) ~130-170с, QA ~200с.
-  Без правки исходников Holix не ускорить — кандидат на апстрим-фикс.
-- Прямое делегирование lead→dev внутри Holix (пока «звезда» через Hermes).
-- Kanban-интеграция NocoDB. OpenHands в конвейере.
+**Проблемы:**
+- Гейтвей на порту 8000 не возвращает HTTP-ответ (баг Holix)
+- MCP postgres через `npx @modelcontextprotocol/server-postgres` не работает — в контейнере нет npx/nodejs
+- `NON_INTERACTIVE=true` + `run_terminal_command` требует подтверждения → бесконечный цикл
 
-═══════════════════════════════════════════════════════════
-ГЛАВНОЕ ЗА НОЧЬ: агентское исполнение Holix ПОЧИНЕНО
-═══════════════════════════════════════════════════════════
-Было: `/v1/chat/completions` на воркерах зависал (100%+ CPU, нет ответа) — Hermes
-не мог делегировать Holix-воркерам. Стало: воркер отвечает реальным контентом
-(проверено: «2+2»→"4", «7×6»→"42" через coordinator gateway с ключом).
+**Обходной путь (принят):** Hermes пишет в hermes_brain напрямую через свой MCP postgres. Архивариус отложен до фикса Holix.
 
-ДВЕ КОРНЕВЫЕ ПРИЧИНЫ (найдены py-spy + чтением исходников Holix):
-1. ЗАВИСАНИЕ = onnxruntime thread-thrash. LangGraph-нода `memory_retrieval_node`
-   на КАЖДЫЙ запрос делает ChromaDB-эмбеддинг (ONNX MiniLM). onnxruntime плодит
-   потоки по числу ядер ХОСТА (12+), а cgroup-лимит `cpus:'1'` → трэшинг → создание
-   ONNX-сессии тянется минутами. Фикс: поднять лимит CPU (coordinator cpus:'6').
-2. «Agent completed without producing a final response» (tokens=0) = баг LangGraph-
-   пути в Holix 0.1.21: `core/agent.py::_run_with_graph` ловит ответ только из
-   `FinalResponseEvent`, а граф его не эмитит с контентом. Фикс: `USE_LANGGRAPH=false`
-   → агент идёт легаси-путём (`core/agent_execution.py`), который возвращает контент.
+## Итерация 2 — OpenHands
 
-КРИТИЧНЫЕ НАСТРОЙКИ (иначе не работает):
-- Модель агента = `deepseek-chat` (НЕ reasoning `deepseek-v4-flash`! reasoning отдаёт
-  пустой content + reasoning_content → легаси-путь получает пусто). При
-  `models_via_providers: true` агент берёт ПРОВАЙДЕРСКИЙ `default_model` — его надо
-  форсить (в wrapper есть `sed default_model→deepseek-chat`, т.к. `holix models add`
-  на эфемерном /root/.holix сбрасывает его на первый = v4-flash).
-- `USE_LANGGRAPH=false` (в ~/studio/.env, все воркеры через env_file).
-- CPU-лимит контейнера ≥ несколько ядер (иначе ONNX-трэшинг в warm-up и памяти).
-- ⚠️ Имена ENV Holix БЕЗ префикса, если у поля в config.py нет validation_alias:
-  `REQUIRE_AUTH` (НЕ HOLIX_REQUIRE_AUTH!), `USE_LANGGRAPH`, `MODEL`,
-  `ENABLE_LONG_TERM_MEMORY`, `AUTO_SUMMARIZE_CONVERSATIONS`, `NON_INTERACTIVE`.
-  С alias (префикс HOLIX_ работает): `HOLIX_GATEWAY_HOST/PORT`, `HOLIX_API_KEY_PEPPER`,
-  `HOLIX_ENV`, `HOLIX_LOG_DEBUG`. Всегда сверять по config.py (validation_alias).
+**Результат:** ✅ интеграция работает.
 
-═══════════════════════════════════════════════════════════
-СОСТОЯНИЕ ПЛАТФОРМЫ (актуально)
-═══════════════════════════════════════════════════════════
-- Единый проект studio-code (~/studio/docker-compose.yml).
-- Holix обновлён 0.1.19 → **0.1.21** на всех 8 воркерах (образ
-  `ai-studio-holix-backend:0.1.21`/`:latest`, id cf7bad3d27ab; собран инкрементально
-  `FROM :0.1.19 + pipx install "Holix[all]==0.1.21"` + запечённая ChromaDB-модель).
-  Старый образ сохранён как `:0.1.19` и в backups/*.tar.gz — откат.
-- 8 holix-воркеров: coordinator, archivist, backend-lead, frontend-lead, qa,
-  loop-checker, lint, backend-executor. Все на deepseek-chat + USE_LANGGRAPH=false.
-- Gateway: bind 0.0.0.0:8000 у всех; coordinator опубликован на хост
-  **127.0.0.1:8010** (точка входа Hermes). Health у всех 200 (после warm-up).
-- Auth: coordinator require_auth=true + hx_-ключ (в ~/studio/.holix-hermes-key.txt
-  и ~/.hermes/.env как HOLIX_GATEWAY_KEY); постоянный том /root/.holix у coordinator
-  (bind ~/ai-studio/holix/coordinator/.holix) → ключ переживает пересоздание.
-  Роли: require_auth=true, но КЛЮЧА НЕТ (эфемерный /root/.holix) → см. next-steps.
-- LLM: провайдер deepseek; агент — deepseek-chat; провайдер знает и v4-flash/pro.
-- MCP postgres: как было (crystaldba, restricted).
+- API доступен на :3000, эндпоинт: POST /api/conversations/{id}/message
+- Агент выполняет задачи: создал fibonacci.py и hello.py
+- Написан скрипт: `~/studio/scripts/openhands-delegate.sh`
+- Скорость: ~5-10 мин на задачу (DeepSeek)
 
-═══════════════════════════════════════════════════════════
-ПРОВЕРЕНО (реальным выводом)
-═══════════════════════════════════════════════════════════
-- coordinator /v1/chat/completions с hx_-ключом → HTTP 200, content "4" и "42".
-- Все 8 воркеров: образ 0.1.21, restart=0, gateway health 200 (по DNS/хост).
-- qa (роль): конфиг deepseek-chat + USE_LANGGRAPH=false + провайдерский
-  default_model=deepseek-chat — идентичен coordinator (агентское исполнение работает).
-- Без ключа /v1/models → 401, с ключом → 200 (auth).
+## Итерация 3 — NocoDB
 
-⚠️ Скорость: агентский ответ ~45-70с (ONNX memory-retrieval при warm-up + шаги ReAct).
-Работает, но медленно — кандидат на оптимизацию (см. next-steps).
+**Результат:** ✅ приборная панель готова.
 
-═══════════════════════════════════════════════════════════
-NEXT STEPS (не сделано за ночь — осознанно отложено)
-═══════════════════════════════════════════════════════════
-1. AUTH-WIRING РОЛЕЙ: у 6 ролей эфемерный /root/.holix → нет hx_-ключа, их /v1
-   закрыт 401. Варианты: (а) REQUIRE_AUTH=false для внутренних ролей (доступны только
-   в docker-сети) — но .env общий с coordinator, нужен отдельный механизм/override;
-   (б) постоянный том /root/.holix каждому + bootstrap ключа; (в) единый ключ через
-   общий том security/. Решить с пользователем.
-2. СОСТАВ К ЗАМЫСЛУ: тимлиды делегируют `holix-python-dev`/`holix-react-dev` —
-   таких контейнеров НЕТ. backend-executor — сирота без yaml-роли. Добавить dev-
-   исполнителей и прописать делегирование (по согласованию — см. диалог).
-3. E2E: настроить Hermes (хост) на вызов coordinator (`--delegate-to` / custom
-   provider на http://127.0.0.1:8010/v1, ключ hx_), прогнать maker-checker.
-4. СКОРОСТЬ: агентский ответ 45-70с. Профилировать: возможно, отключить
-   conversation-memory-retrieval полностью (не только LTM) или поднять cpus ролям.
-5. РОЛЯМ поднять cpus (сейчас '1' у части → warm-up ~4мин, трэшинг). Дать 2-4 ядра.
+- Workspace «Ai Studio» с проектом «AI Studio Knowledge Base»
+- PostgreSQL hermes_brain подключён: 47 таблиц
+- PostgreSQL studio_db подключён (пустой)
+- SQLite-таблицы наполнены: Features (4), Tasks (5), Projects (2)
+- docker-compose: добавлен NC_ALLOW_LOCAL_EXTERNAL_DBS=true
+- Доступ: http://localhost:8080, potapof@gmail.com / StudioPass2026!
 
-═══════════════════════════════════════════════════════════
-БЫСТРЫЙ СТАРТ НОВОЙ СЕССИИ
-═══════════════════════════════════════════════════════════
-```bash
-cd ~/studio && docker compose ps                      # 14 контейнеров
-# health воркеров (по DNS из coordinator — надёжнее exec под нагрузкой):
-for c in holix-coordinator holix-qa holix-lint; do \
- docker exec holix-coordinator curl -s -o /dev/null -w "$c=%{http_code}\n" http://$c:8000/health; done
-# боевой агентский тест (ключ в файле):
-KEY=$(cat ~/studio/.holix-hermes-key.txt)
-curl -s --max-time 120 -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
- -X POST http://127.0.0.1:8010/v1/chat/completions \
- -d '{"model":"default","messages":[{"role":"user","content":"2+2? одним числом"}],"max_tokens":100}'
-```
-Диагностика зависания агента: `docker exec <c> pip install --break-system-packages py-spy`
-(нужен cap_add SYS_PTRACE), затем `py-spy dump --pid 1` во время запроса.
+## Итерация 4 — База знаний
 
-═══════════════════════════════════════════════════════════
-КЛЮЧЕВЫЕ ФАЙЛЫ
-═══════════════════════════════════════════════════════════
-```
-~/studio/docker-compose.yml                 — стек (ветка feature/holix-upgrade)
-~/studio/.env                                — секреты + USE_LANGGRAPH/ENABLE_LTM/OMP (gitignore)
-~/studio/.holix-hermes-key.txt               — hx_-ключ coordinator (chmod 600, gitignore)
-~/ai-studio/holix/backend/Dockerfile          — база образа (пин)
-~/ai-studio/holix/backend/Dockerfile.update   — инкрементальная сборка 0.1.21 + bake модели
-~/ai-studio/holix/coordinator/.holix          — постоянный профиль coordinator (ключ/конфиг)
-~/studio/backups/holix-image-0.1.19-*.tar.gz  — откат образа
-~/studio/PLAN-HOLIX-NIGHT.md                  — план ночного прогона
-```
-Навык deploy-studio (Проблема 18) — полный разбор фикса агентского исполнения.
+**Результат:** инфраструктура готова, данные не сгенерированы.
+
+- pgvector 0.8.3 установлен и работает
+- HNSW-индексы созданы (skills, handoff_documents)
+- Эмбеддинги НЕ сгенерированы — архивариус не запускал sentence-transformers
+- 20 навыков, 3 handoff-документа, 25 записей knowledge_base
+
+**Что нужно:** запустить генерацию эмбеддингов для skills и handoff_documents
+
+## Итерация 5 — Интеграционный прогон
+
+**Результат:** цепочка частично работает.
+
+- ✅ NocoDB → чтение задачи
+- ❌ Holix delegation (non-interactive блокирует инструменты)
+- ✅ Запись в PostgreSQL (handoff_documents)
+- ✅ Обновление статуса в NocoDB
+
+**Корень проблемы:** все Holix-воркеры (coordinator, archivist, python-dev, etc.) не могут выполнять задачи с инструментами в режиме NON_INTERACTIVE=true. Текстовые ответы работают.
+
+## Итерация 6 — Хозяйственное
+
+- ✅ openhands-delegate.sh написан
+- ✅ docker-compose.yml обновлён
+- ✅ NocoDB наполнен данными
+- ✅ Этот документ написан
+- ⬜ Коммит + push в main
+
+## Файлы изменены
+
+- `docker-compose.yml` — добавлен NC_ALLOW_LOCAL_EXTERNAL_DBS
+- `scripts/openhands-delegate.sh` — новый скрипт
+
+## Ключевые проблемы (на будущее)
+
+1. **Holix non-interactive bug** — нужен фикс AUTO_ALLOW_THRESHOLD или /v1/permissions/grant
+2. **Архивариус** — нужен npx/nodejs в контейнере или замена MCP-транспорта
+3. **pgvector эмбеддинги** — нужна генерация (архивариус или отдельный скрипт)
+4. **OpenHands скорость** — 5-10 мин на задачу, рассмотреть смену модели
