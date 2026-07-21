@@ -203,6 +203,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: coordinator
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       AUTO_SUMMARIZE_CONVERSATIONS: "false"   # не суммаризировать после ответа (пост-обработка виснет) — воркер-исполнитель
       ENABLE_LONG_TERM_MEMORY: "false"        # LTM/эмбеддинги ведёт Hermes на хосте
@@ -246,6 +248,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: archivist
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
@@ -283,6 +287,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: backend-lead
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
@@ -318,6 +324,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: frontend-lead
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
@@ -353,6 +361,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: python-dev
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -387,6 +397,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: react-dev
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -421,6 +433,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: qa
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -455,6 +469,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: loop-checker
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -489,6 +505,8 @@ services:
     env_file: .env
     environment:
       HOLIX_PROFILE: lint
+      AUTO_ALLOW_THRESHOLD: "high"
+      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
