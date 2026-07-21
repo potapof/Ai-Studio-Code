@@ -1,0 +1,497 @@
+# ============================================================================
+# Единый Docker Compose «Студии программирования»
+# Проект: studio-code  (объединяет бывшие проекты ai-studio + studio)
+# ----------------------------------------------------------------------------
+#  Данные мозга (bind):        /home/potapof/ai-studio/data/postgres
+#  Сеть (фикс-имя):            ai-studio_ai_studio_network  (нужна MCP-конфигу)
+#  Hermes работает на ХОСТЕ — отдельного контейнера hermes нет.
+#  Все holix запускаются с --foreground (иначе restart-петля).
+# ============================================================================
+
+name: studio-code
+
+networks:
+  ai_studio_net:
+    name: ai-studio_ai_studio_network      # жёсткое имя, не зависит от проекта
+    driver: bridge
+  studio-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          ip_range: 172.20.0.0/24
+          gateway: 172.20.0.1
+    driver_opts:
+      com.docker.network.bridge.name: br-studio
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+
+volumes:
+  holix_coordinator_data:
+  holix_archivist_data:
+  holix_backend_lead_data:
+  holix_frontend_lead_data:
+  holix_qa_data:
+  holix_loop_checker_data:
+  holix_lint_data:
+  portainer_data:
+  egress_logs:
+  hermes_shared:                            # ro-обмен для archivist (хостовый ~/.hermes)
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/potapof/studio/.hermes
+  syncthing_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/potapof/studio/.config/syncthing
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+x-holix-security: &holix-security
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - SETUID
+    - SETGID
+    - DAC_OVERRIDE
+  tmpfs:
+    - /tmp:size=256M
+
+services:
+  # =====================================================================
+  # МОЗГ: PostgreSQL 16 + pgvector  (данные — реальный путь ai-studio)
+  # =====================================================================
+  postgres-db:
+    image: studio-postgres:pg16-age-vector
+    container_name: nocodb-postgres-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-studio_db}
+      POSTGRES_USER: ${POSTGRES_USER:-nocodb_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - /home/potapof/ai-studio/data/postgres:/var/lib/postgresql/data
+    networks:
+      ai_studio_net:
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4'
+    logging: *default-logging
+
+  # =====================================================================
+  # ПРИБОРНАЯ ПАНЕЛЬ: NocoDB  (конфиг как в рабочем ai-studio)
+  # =====================================================================
+  nocodb-app:
+    image: nocodb/nocodb:latest
+    container_name: nocodb-web-ui
+    restart: unless-stopped
+    depends_on:
+      - postgres-db
+    ports:
+      - "8080:8080"
+    volumes:
+      - /home/potapof/ai-studio/data/nocodb:/usr/app/data
+    networks:
+      ai_studio_net:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================================
+  # ВНЕШНИЙ ПОДРЯДЧИК: OpenHands  (конфиг как в рабочем ai-studio)
+  # =====================================================================
+  openhands-agent:
+    image: ghcr.io/all-hands-ai/openhands:main
+    container_name: openhands-outsourcer
+    restart: unless-stopped
+    depends_on:
+      - postgres-db
+    environment:
+      - LLM_API_KEY=${DEEPSEEK_API_KEY}
+      - LLM_MODEL=deepseek-v4-flash
+      - LLM_BASE_URL=https://api.deepseek.com
+      - SANDBOX_RUNTIME_CONTAINER_IMAGE=ghcr.io/all-hands-ai/runtime:main
+    volumes:
+      - /home/potapof/ai-studio/openhands/workspace:/app/workspace
+    networks:
+      ai_studio_net:
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    logging: *default-logging
+
+  # =====================================================================
+  # ИСПОЛНИТЕЛЬ: Holix Backend Executor  (данные — путь ai-studio)
+  # =====================================================================
+  holix-backend-executor:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-backend-executor
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - postgres-db
+    working_dir: /workspace
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - LLM_MODEL=deepseek-v4-flash
+      - HOLIX_GATEWAY_HOST=0.0.0.0
+      - HOLIX_GATEWAY_PORT=8000
+      - TZ=${TZ:-Europe/Moscow}
+    volumes:
+      - /home/potapof/ai-studio/holix/backend/.holix:/root/.holix
+      - /home/potapof/ai-studio/data/codebase/backend:/workspace
+    networks:
+      ai_studio_net:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  # =====================================================================
+  # ИСПОЛНИТЕЛИ Holix (проект studio) — все на --foreground
+  # =====================================================================
+  holix-coordinator:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-coordinator
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8010:8000"   # gateway coordinator на хост (Hermes-compat); 8000 занят portainer
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: coordinator
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      AUTO_SUMMARIZE_CONVERSATIONS: "false"   # не суммаризировать после ответа (пост-обработка виснет) — воркер-исполнитель
+      ENABLE_LONG_TERM_MEMORY: "false"        # LTM/эмбеддинги ведёт Hermes на хосте
+      OMP_NUM_THREADS: "1"                     # КРИТИЧНО: onnxruntime без тред-трэшинга на cpus:1 (иначе создание ONNX-сессии для эмбеддинга виснет минутами)
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.2"
+      NON_INTERACTIVE: "true"          # агент в gateway-режиме не ждёт подтверждений (chat/completions не зависает)
+      CONFIRMATION_TIMEOUT: "60"       # фоллбэк: 60с на любой confirm вместо вечного ожидания
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-coordinator.yaml:/config/config.yaml:ro
+      - /home/potapof/ai-studio/holix/coordinator/.holix:/root/.holix   # постоянный (auth,конфиг,память)
+      - holix_coordinator_data:/workspace
+      - /tmp/holix-worktrees:/worktrees
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.41
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '6'
+    logging: *default-logging
+
+  holix-archivist:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-archivist
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: archivist
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.3"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-archivist.yaml:/config/config.yaml:ro
+      - holix_archivist_data:/workspace
+      - hermes_shared:/config/hermes-shared:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.42
+    <<: *holix-security
+    tmpfs:
+      - /tmp:size=512M
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1'
+    logging: *default-logging
+
+  holix-backend-lead:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-backend-lead
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: backend-lead
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.4"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-backend-lead.yaml:/config/config.yaml:ro
+      - holix_backend_lead_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.43
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  holix-frontend-lead:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-frontend-lead
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: frontend-lead
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.4"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-frontend-lead.yaml:/config/config.yaml:ro
+      - holix_frontend_lead_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.44
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  holix-qa:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-qa
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: qa
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.0"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-qa.yaml:/config/config.yaml:ro
+      - holix_qa_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.47
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+    logging: *default-logging
+
+  holix-loop-checker:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-loop-checker
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: loop-checker
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.0"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-loop-checker.yaml:/config/config.yaml:ro
+      - holix_loop_checker_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.48
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+    logging: *default-logging
+
+  holix-lint:
+    image: ai-studio-holix-backend:latest
+    container_name: holix-lint
+    restart: unless-stopped
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-chat >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/default_model: deepseek-v4-flash/default_model: deepseek-chat/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    depends_on:
+      - postgres-db
+    env_file: .env
+    environment:
+      HOLIX_PROFILE: lint
+      HOLIX_CONFIG_PATH: /config/config.yaml
+      LLM_PROVIDER: deepseek
+      LLM_API_KEY: ${DEEPSEEK_API_KEY}
+      LLM_MODEL: deepseek-v4-flash
+      LLM_TEMPERATURE: "0.0"
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - ./examples/configs/holix-lint.yaml:/config/config.yaml:ro
+      - holix_lint_data:/workspace
+      - /tmp/holix-worktrees:/worktrees:ro
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.49
+    <<: *holix-security
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging: *default-logging
+
+  # =====================================================================
+  # БЕЗОПАСНОСТЬ: Egress Proxy (Squid, ACL по studio-net 172.20/16)
+  # =====================================================================
+  egress-proxy:
+    image: ubuntu/squid:latest
+    container_name: egress-squid
+    restart: unless-stopped
+    volumes:
+      - ./examples/configs/squid.conf:/etc/squid/squid.conf:ro
+      - ./examples/configs/squid-whitelist.txt:/etc/squid/whitelist.txt:ro
+      - egress_logs:/var/log/squid
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.100
+    ports:
+      - "3128:3128"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+    logging: *default-logging
+
+  # =====================================================================
+  # МОНИТОРИНГ: Portainer
+  # =====================================================================
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: always
+    ports:
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.70
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    logging: *default-logging
+
+  # =====================================================================
+  # СИНХРОНИЗАЦИЯ: Syncthing (P2P с Windows-хостом)
+  # =====================================================================
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${TZ:-Europe/Moscow}
+    ports:
+      - "8384:8384"
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      - "21027:21027/udp"
+    volumes:
+      - syncthing_data:/config
+      - /home/potapof/studio/syncthing-host:/data1
+    networks:
+      ai_studio_net:
+      studio-net:
+        ipv4_address: 172.20.0.80
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    logging: *default-logging
