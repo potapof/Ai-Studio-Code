@@ -134,17 +134,16 @@ services:
     depends_on:
       - postgres-db
     working_dir: /workspace
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
-      - REQUIRE_AUTH=false   # внутренний воркер: доступ только из docker-сети, вход с auth — coordinator
+      - REQUIRE_AUTH=false
       - LLM_MODEL=deepseek-v4-flash
       - HOLIX_GATEWAY_HOST=0.0.0.0
       - HOLIX_GATEWAY_PORT=8000
       - OMP_NUM_THREADS=1
       - MKL_NUM_THREADS=1
       - OPENBLAS_NUM_THREADS=1
-      - MAX_STEPS=2
       - TZ=${TZ:-Europe/Moscow}
     volumes:
       - /home/potapof/ai-studio/holix/backend/.holix:/root/.holix
@@ -167,7 +166,7 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8010:8000"   # gateway coordinator на хост (Hermes-compat); 8000 занят portainer
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-pro >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-pro/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; sed -i 's/default_model: .*/default_model: deepseek-v4-pro/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-pro >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-pro/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; sed -i 's/default_model: .*/default_model: deepseek-v4-pro/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
@@ -186,10 +185,7 @@ services:
       - LLM_API_KEY=${DEEPSEEK_API_KEY}
       - LLM_MODEL=deepseek-v4-pro
       - LLM_TEMPERATURE=0.2
-      - NON_INTERACTIVE=true
-      - CONFIRMATION_TIMEOUT=60
       - TZ=${TZ:-Europe/Moscow}
-      - MAX_STEPS=2
     volumes:
       - ./examples/configs/holix-coordinator.yaml:/config/config.yaml:ro
       - /home/potapof/ai-studio/holix/coordinator/.holix:/root/.holix   # постоянный (auth,конфиг,память)
@@ -212,14 +208,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-archivist
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: archivist
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
@@ -228,7 +223,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.3"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-archivist.yaml:/config/config.yaml:ro
       - holix_archivist_data:/workspace
@@ -251,14 +245,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-backend-lead
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: backend-lead
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
@@ -267,7 +260,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.4"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-backend-lead.yaml:/config/config.yaml:ro
       - holix_backend_lead_data:/workspace
@@ -288,14 +280,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-frontend-lead
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: frontend-lead
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       HERMES_POSTGRES_URL: "postgresql://${POSTGRES_USER}:***@nocodb-postgres-db:5432/hermes_brain"
@@ -304,7 +295,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.4"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-frontend-lead.yaml:/config/config.yaml:ro
       - holix_frontend_lead_data:/workspace
@@ -325,14 +315,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-python-dev
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: python-dev
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -340,7 +329,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.2"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-python-dev.yaml:/config/config.yaml:ro
       - holix_python_dev_data:/workspace
@@ -361,14 +349,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-react-dev
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: react-dev
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -376,7 +363,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.2"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-react-dev.yaml:/config/config.yaml:ro
       - holix_react_dev_data:/workspace
@@ -397,14 +383,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-qa
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: qa
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -412,7 +397,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-qa.yaml:/config/config.yaml:ro
       - holix_qa_data:/workspace
@@ -433,14 +417,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-loop-checker
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: loop-checker
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -448,7 +431,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-loop-checker.yaml:/config/config.yaml:ro
       - holix_loop_checker_data:/workspace
@@ -469,14 +451,13 @@ services:
     image: ai-studio-holix-backend:latest
     container_name: holix-lint
     restart: unless-stopped
-    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; exec holix gateway start --foreground"]
+    command: ["sh", "-c", "holix models add deepseek </dev/null 2>/dev/null || true; holix config set model deepseek-v4-flash >/dev/null 2>&1 || true; holix config set base_url https://api.deepseek.com/v1 >/dev/null 2>&1 || true; sed -i 's/^model: .*/model: deepseek-v4-flash/' /root/.holix/profiles/default/config.yaml 2>/dev/null || true; echo 'auto_allow_threshold: high' >> /root/.holix/profiles/default/config.yaml; exec holix gateway start --foreground"]
     depends_on:
       - postgres-db
     env_file: .env
     environment:
       HOLIX_PROFILE: lint
       AUTO_ALLOW_THRESHOLD: "high"
-      HOLIX_TERMINAL_COMMAND_WHITELIST: "false"
       HOLIX_CONFIG_PATH: /config/config.yaml
       REQUIRE_AUTH: "false"            # внутренний воркер: без auth, вход с auth — coordinator
       LLM_PROVIDER: deepseek
@@ -484,7 +465,6 @@ services:
       LLM_MODEL: deepseek-v4-flash
       LLM_TEMPERATURE: "0.0"
       TZ: ${TZ:-Europe/Moscow}
-      MAX_STEPS: "2"
     volumes:
       - ./examples/configs/holix-lint.yaml:/config/config.yaml:ro
       - holix_lint_data:/workspace
