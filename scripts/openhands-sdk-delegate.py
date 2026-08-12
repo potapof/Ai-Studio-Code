@@ -16,6 +16,7 @@ parser.add_argument("--fast", action="store_true", help="deepseek-v4-flash (бы
 parser.add_argument("--timeout", type=int, default=300, help="Таймаут в секундах")
 parser.add_argument("--workspace", default="/tmp/openhands-workspace", help="Рабочая директория")
 parser.add_argument("--no-browser", action="store_true", help="Отключить browser tools (быстрее старт)")
+parser.add_argument("--max-iterations", type=int, default=40, help="Лимит итераций агента (защита от бесконечного цикла; SDK default 500)")
 args = parser.parse_args()
 
 if not args.task:
@@ -49,7 +50,7 @@ from openhands.tools.preset import get_default_agent
 llm = LLM(model=MODEL, api_key=API_KEY, base_url="https://api.deepseek.com")
 agent = get_default_agent(llm=llm)
 
-conv = Conversation(agent=agent, workspace=args.workspace)
+conv = Conversation(agent=agent, workspace=args.workspace, max_iteration_per_run=args.max_iterations)
 conv.set_confirmation_policy(NeverConfirm())
 
 print(f"→ OpenHands SDK 1.36.1 ({LABEL}) [{args.workspace}]")
