@@ -54,10 +54,20 @@ echo "── 6. Staging (не критично) ──"
 ST=$(curl -s --max-time 8 -o /dev/null -w '%{http_code}' https://app.maxscrm.ru/s/demo 2>/dev/null)
 [ "$ST" = "200" ] && ok "staging app.maxscrm.ru ($ST)" || info "staging: $ST (проверить позже)"
 
+echo "── 7. Студия дизайна: dsh + OpenDesign ──"
+DSH_V=$(dsh --version 2>/dev/null | tail -1)
+[ -n "$DSH_V" ] && ok "dsh CLI ($DSH_V)" || bad "dsh CLI (нужен: npm i -g @deepseek-ai/dsh; Node>=22 — у нас n 24)"
+P=$(dsh --profile open-design --probe 2>/dev/null | grep -o '"runtime":"open-design"')
+[ -n "$P" ] && ok "dsh профиль open-design (probe OK)" || bad "dsh профиль open-design (нужен: dsh plugin --profile open-design add ~/studio/dsh/open-design-dsh-runtime-0.1.0.tgz)"
+OD=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:7456/ 2>/dev/null)
+[ "$OD" = "200" ] && ok "OpenDesign daemon :7456 (web-UI)" || bad "OpenDesign daemon :7456 (нужен: cd ~/studio/open-design/apps/daemon && node dist/cli.js --no-open)"
+
 if [ "$1" = "--deep" ]; then
-  echo "── 7. Smoke воркера Holix (--deep, ~1-2 мин) ──"
+  echo "── 8. Smoke воркеров (--deep, ~1-2 мин) ──"
   W=$(~/studio/scripts/holix-delegate.sh python-dev "Reply with exactly: W-OK" --timeout 120 2>&1 | tail -1)
-  echo "$W" | grep -q "W-OK" && ok "воркер python-dev: W-OK" || bad "воркер python-dev: $W"
+  echo "$W" | grep -q "W-OK" && ok "воркер Holix python-dev: W-OK" || bad "воркер Holix python-dev: $W"
+  D=$(set -a; source ~/studio/.env 2>/dev/null; set +a; DSH_MODEL=deepseek-v4-flash timeout 120 dsh --profile headless "Reply with exactly: D-OK" 2>&1 | tail -1)
+  echo "$D" | grep -q "D-OK" && ok "воркер dsh headless: D-OK" || bad "воркер dsh headless: $D"
 fi
 
 echo "═══════════════════════════════════════════════════════════════════"

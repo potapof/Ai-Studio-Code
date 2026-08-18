@@ -179,3 +179,9 @@ backups/
 *.split.bak.*
 *.deprecated_*
 .holix-hermes-key.txt
+
+# Студия дизайна (dsh + OpenDesign)
+open-design/
+dsh/
+Ai/
+.venv-dsh/
