@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Студия — мозг: знания → эмбеддинги → Postgres + AGE → поиск",
+    "quality_profile": "showcase",
+    "viewBox": [960, 520],
+    "views": [
+      { "id": "ingest", "label": "Источники → векторы", "focus": ["docs", "sessions", "embed"], "note": "Документы/прогоны векторизуются архивариусом." },
+      { "id": "store", "label": "Хранилище", "focus": ["pg", "age"], "note": "pgvector (векторы) + Apache AGE (графы зависимостей)." },
+      { "id": "consume", "label": "Потребление", "focus": ["search"], "note": "Векторный k-NN поиск (контекст loop, навыки)." }
+    ]
+  },
+  "stages": [
+    { "label": "Sources" },
+    { "label": "Ingest" },
+    { "label": "Store" },
+    { "label": "Consume" }
+  ],
+  "nodes": [
+    { "id": "docs", "type": "external", "label": "Документы", "sublabel": "SKILL.md · HANDOFF.md", "stage": 0, "row": 0, "tag": "знания" },
+    { "id": "sessions", "type": "external", "label": "Прогоны", "sublabel": "сессии · loop_runs", "stage": 0, "row": 2, "tag": "опыт" },
+    { "id": "embed", "type": "backend", "label": "Эмбеддинги", "sublabel": "generate_embedding", "stage": 1, "row": 1, "tag": "векторизация" },
+    { "id": "pg", "type": "database", "label": "Postgres (pgvector)", "sublabel": "hermes_brain", "stage": 2, "row": 0, "tag": "162 записей" },
+    { "id": "age", "type": "database", "label": "Apache AGE", "sublabel": "code_graph · task_graph", "stage": 2, "row": 2, "tag": "граф" },
+    { "id": "search", "type": "backend", "label": "Векторный поиск", "sublabel": "k-NN · контекст loop", "stage": 3, "row": 1, "tag": "потребление" }
+  ],
+  "flows": [
+    { "id": "f1", "from": "docs", "to": "embed", "label": "текст → вектор", "classification": "знания", "variant": "emphasis" },
+    { "id": "f2", "from": "sessions", "to": "embed", "label": "прогоны → вектор", "classification": "опыт", "variant": "default" },
+    { "id": "f3", "from": "embed", "to": "pg", "label": "вектор (pgvector)", "classification": "store", "variant": "emphasis" },
+    { "id": "f4", "from": "embed", "to": "age", "label": "граф (рёбра)", "classification": "graph", "variant": "dashed" },
+    { "id": "f5", "from": "pg", "to": "search", "label": "k-NN", "classification": "similarity", "variant": "emphasis" },
+    { "id": "f6", "from": "age", "to": "search", "label": "impact (зависимости)", "classification": "graph", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Мозг", "items": ["Документы + прогоны → эмбеддинги", "pgvector хранит векторы, Apache AGE — графы", "Loop берёт контекст через векторный k-NN"] },
+    { "dot": "rose", "title": "Защита", "items": ["forbid_ddl / forbid_truncate в postgres MCP", "Новые loop — только через validate_new_loop()", "Архивариус извлекает уроки после прогона"] }
+  ]
+}

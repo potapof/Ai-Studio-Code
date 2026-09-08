@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Студия — Docker-стек инфраструктуры",
+    "quality_profile": "showcase",
+    "viewBox": [
+      860,
+      340
+    ]
+  },
+  "components": [
+    {
+      "id": "age",
+      "type": "database",
+      "label": "Postgres (AGE)",
+      "sublabel": "studio-postgres:pg16-age-vector",
+      "tag": "мозг · pgvector + AGE",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        180,
+        60
+      ]
+    },
+    {
+      "id": "nocodb",
+      "type": "frontend",
+      "label": "NocoDB",
+      "sublabel": "nocodb-app + postgres",
+      "tag": "дашборды UI",
+      "pos": [
+        260,
+        60
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "repo-redis-1",
+      "tag": "кеш",
+      "pos": [
+        460,
+        60
+      ],
+      "size": [
+        150,
+        60
+      ]
+    },
+    {
+      "id": "maxpgr",
+      "type": "database",
+      "label": "maxscrm-postgres",
+      "sublabel": "БД приложения",
+      "tag": "Prisma",
+      "pos": [
+        660,
+        60
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "portainer",
+      "type": "cloud",
+      "label": "Portainer",
+      "sublabel": "Docker UI",
+      "pos": [
+        40,
+        220
+      ],
+      "size": [
+        150,
+        52
+      ]
+    },
+    {
+      "id": "egress",
+      "type": "security",
+      "label": "egress-squid",
+      "sublabel": "прокси-фильтр",
+      "pos": [
+        260,
+        220
+      ],
+      "size": [
+        160,
+        52
+      ]
+    },
+    {
+      "id": "sync",
+      "type": "external",
+      "label": "Syncthing",
+      "sublabel": "синхронизация",
+      "pos": [
+        460,
+        220
+      ],
+      "size": [
+        150,
+        52
+      ]
+    },
+    {
+      "id": "holix",
+      "type": "backend",
+      "label": "Holix-агенты",
+      "sublabel": "координатор · dev-роли · loop-checker",
+      "pos": [
+        660,
+        220
+      ],
+      "size": [
+        170,
+        56
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Docker-стек Студии (docker compose)",
+      "wraps": [
+        "age",
+        "nocodb",
+        "redis",
+        "maxpgr",
+        "portainer",
+        "egress",
+        "sync",
+        "holix"
+      ],
+      "pad": 22
+    }
+  ],
+  "connections": [],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Инфра",
+      "items": [
+        "postgres-age — мозг (pgvector + Apache AGE)",
+        "NocoDB — дашборды/таблицы поверх БЗ",
+        "Redis — кеш; Portainer — Docker UI; egress-squid — фильтр"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Сервисы",
+      "items": [
+        "Syncthing — синхронизация файлов",
+        "Holix-агенты — координатор, dev-роли, loop-checker, lint",
+        "maxscrm-postgres — отдельная БД приложения"
+      ]
+    }
+  ]
+}

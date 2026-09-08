@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Студия — мультиплексор агентов (Herdr)",
+    "quality_profile": "showcase",
+    "viewBox": [780, 540]
+  },
+  "components": [
+    { "id": "hermes", "type": "external", "label": "Hermes", "sublabel": "оркестратор", "pos": [40, 70], "size": [140, 52] },
+    { "id": "herdr", "type": "messagebus", "label": "Herdr", "sublabel": "gateway :8010", "pos": [250, 70], "size": [150, 52] },
+    { "id": "holix", "type": "backend", "label": "Holix", "sublabel": "мультиагент", "tag": "coordinator · loop-checker · dev-роли", "pos": [40, 210], "size": [175, 60] },
+    { "id": "openhands", "type": "backend", "label": "OpenHands", "sublabel": "maker", "pos": [40, 320], "size": [175, 52] },
+    { "id": "dsh", "type": "backend", "label": "dsh", "sublabel": "дизайн", "pos": [40, 420], "size": [175, 52] },
+    { "id": "sql", "type": "database", "label": "Postgres (БЗ)", "sublabel": "hermes_brain · конвергент", "pos": [540, 210], "size": [170, 60] }
+  ],
+  "connections": [
+    { "id": "c1", "from": "hermes", "to": "herdr", "label": "волны", "variant": "emphasis" },
+    { "id": "c2", "from": "holix", "to": "herdr", "label": "сервис", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c3", "from": "openhands", "to": "herdr", "label": "сервис", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c4", "from": "dsh", "to": "herdr", "label": "сервис", "fromSide": "top", "toSide": "bottom" },
+    { "id": "c5", "from": "herdr", "to": "sql", "label": "запись/чтение", "variant": "emphasis", "fromSide": "right", "toSide": "left", "labelAt": [430, 168] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Агенты → Herdr", "items": ["Holix, OpenHands, dsh подключаются к Herdr gateway :8010", "Hermes — оркестратор сверху (волны, арбитраж)", "Каждый агент — отдельный сервис/контейнер"] },
+    { "dot": "emerald", "title": "БЗ", "items": ["Herdr пишет в конвергентную БД (Postgres)", "hermes_brain + loop_runs + handoff_documents", "Мониторинг/метрики в реальном времени"] },
+    { "dot": "amber", "title": "Роли Holix", "items": ["coordinator, archivist, backend/frontend-lead, python/react-dev, qa, loop-checker, lint", "Проверка/учёт в БЗ"] }
+  ]
+}

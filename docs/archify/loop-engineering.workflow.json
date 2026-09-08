@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Студия — Loop-инжиниринг: волна агента (maker-checker-arbiter)",
+    "quality_profile": "showcase",
+    "viewBox": [1070, 916],
+    "views": [
+      { "id": "context", "label": "Контекст", "focus": ["trigger", "context"], "note": "Триггер → векторный поиск в handoff_documents + SOA (общие задачи)." },
+      { "id": "maker-checker", "label": "Maker → Checker", "focus": ["maker", "checker"], "note": "OpenHands пишет в worktree, Holix-checker объективно PASS/FAIL." },
+      { "id": "arbiter", "label": "Arbiter (Hermes)", "focus": ["checker", "arbiter", "handoff"], "note": "Решение PR / retry / escalate; результат → HANDOFF.md в БЗ." }
+    ]
+  },
+  "lanes": [
+    { "id": "trigger", "label": "Автоматизация" },
+    { "id": "context", "label": "Контекст (память)" },
+    { "id": "maker", "label": "Maker (OpenHands)" },
+    { "id": "checker", "label": "Checker (Holix)" },
+    { "id": "arbiter", "label": "Arbiter (Hermes)" },
+    { "id": "deliver", "label": "Доставка" }
+  ],
+  "mainPath": ["trigger", "context", "maker", "checker", "arbiter", "handoff"],
+  "nodes": [
+    { "id": "trigger", "lane": "trigger", "col": 0, "type": "external", "label": "Trigger", "sublabel": "cron/event/condition", "width": 140 },
+    { "id": "context", "lane": "context", "col": 1, "type": "database", "label": "Контекст", "sublabel": "handoff_documents + SOA", "width": 175, "tag": "векторный поиск" },
+    { "id": "maker", "lane": "maker", "col": 2, "type": "backend", "label": "Maker", "sublabel": "worktree + код", "width": 130, "tag": "OpenHands" },
+    { "id": "checker", "lane": "checker", "col": 3, "type": "security", "label": "Checker", "sublabel": "PASS / FAIL", "width": 130, "tag": "Holix" },
+    { "id": "arbiter", "lane": "arbiter", "col": 4, "type": "cloud", "label": "Arbiter", "sublabel": "PR · retry · escalate", "width": 150, "tag": "Hermes" },
+    { "id": "handoff", "lane": "deliver", "col": 5, "type": "database", "label": "HANDOFF.md", "sublabel": "в БЗ (embedding)", "width": 150 }
+  ],
+  "edges": [
+    { "from": "trigger", "to": "context", "label": "запуск", "variant": "emphasis" },
+    { "from": "context", "to": "maker", "label": "контекст + решения", "variant": "emphasis" },
+    { "from": "maker", "to": "checker", "label": "артефакт", "variant": "emphasis" },
+    { "from": "checker", "to": "arbiter", "label": "вердикт", "variant": "security" },
+    { "from": "arbiter", "to": "maker", "label": "retry", "variant": "dashed", "role": "return" },
+    { "from": "arbiter", "to": "handoff", "label": "PR / escalate", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Конвейер", "items": ["Trigger → вектор-поиск (память) + SOA → Maker(OpenHands) → Checker(Holix) → Arbiter(Hermes)", "Checker объективный PASS/FAIL (не llm-opinion)", "Решение: PR / retry / escalate"] },
+    { "dot": "rose", "title": "Требования", "items": ["maker != checker (не один агент пишет и проверяет)", "token_budget + жёсткий критерий «готово»", "HANDOFF.md с embedding после каждого прогона"] }
+  ]
+}
