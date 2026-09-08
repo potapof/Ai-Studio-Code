@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Студия дизайна — цикл OpenDesign (агент-нативный)",
+    "quality_profile": "showcase",
+    "viewBox": [1000, 620],
+    "views": [
+      { "id": "build", "label": "Бриф → артефакт", "focus": ["brief", "direction", "artifact"], "note": "Бриф, фиксация направления и стриминг артефакта." },
+      { "id": "critique", "label": "Критика и доставка", "focus": ["artifact", "critique", "deliver"], "note": "Критика по дизайн-системе; доработка или доставка." }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "Дизайн-цикл" },
+    { "id": "rework", "label": "Доработка" }
+  ],
+  "states": [
+    { "id": "brief", "type": "start", "label": "Бриф", "sublabel": "краткое задание", "lane": "main", "col": 0, "step": "01", "tag": "анализ задачи" },
+    { "id": "direction", "type": "active", "label": "Направление", "sublabel": "дизайн-система · бренд", "lane": "main", "col": 1, "step": "02", "tag": "lock direction" },
+    { "id": "artifact", "type": "active", "label": "Артефакт", "sublabel": "стриминг генерации", "lane": "main", "col": 2, "step": "03", "tag": "html · pdf" },
+    { "id": "critique", "type": "decision", "label": "Критика", "sublabel": "проверка по дизайн-системе", "lane": "main", "col": 3, "step": "04", "tag": "гейт" },
+    { "id": "deliver", "type": "success", "label": "Доставка", "sublabel": "экспорт + preview", "lane": "main", "col": 4, "step": "05", "tag": "выпуск" }
+  ],
+  "transitions": [
+    { "from": "critique", "to": "artifact", "label": "доработать", "variant": "security", "route": "auto", "labelDy": 70 }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Цикл", "items": ["Бриф → направление → стриминг артефакта → критика → доставка", "Критика по дизайн-системе (DESIGN.md)", "Экспорт HTML/PDF/PPTX/MP4 + live preview"] },
+    { "dot": "rose", "title": "Доработка", "items": ["Критика может вернуть артефакт в генерацию", "Направление фиксируется до артефакта", "Артефакт остаётся в workflow OpenDesign"] }
+  ]
+}

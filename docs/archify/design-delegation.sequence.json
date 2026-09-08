@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Студия дизайна — делегирование дизайн-задачи",
+    "quality_profile": "showcase",
+    "viewBox": [900, 620],
+    "views": [
+      { "id": "delegate", "label": "Делегирование", "focus": ["hermes", "delegate", "dsh"], "note": "Hermes запускает dsh через dsh-delegate.py (Python SDK)." },
+      { "id": "design", "label": "Дизайн + артефакт", "focus": ["dsh", "refs", "od"], "note": "dsh читает референсы (vision), gенерит артефакт через OpenDesign." },
+      { "id": "record", "label": "В базу знаний", "focus": ["dsh", "hermes", "bz"], "note": "Готовый результат фиксируется в hermes_brain." }
+    ]
+  },
+  "participants": [
+    { "id": "hermes", "type": "external", "label": "Hermes", "sublabel": "оркестратор" },
+    { "id": "delegate", "type": "backend", "label": "dsh-delegate", "sublabel": "Python SDK" },
+    { "id": "dsh", "type": "backend", "label": "dsh", "sublabel": "profile open-design" },
+    { "id": "refs", "type": "external", "label": "Референсы", "sublabel": "screen/" },
+    { "id": "od", "type": "frontend", "label": "OpenDesign", "sublabel": "daemon :7456" },
+    { "id": "bz", "type": "database", "label": "hermes_brain", "sublabel": "база знаний" }
+  ],
+  "segments": [
+    { "from": 160, "to": 330, "label": "Делегирование + дизайн" },
+    { "from": 345, "to": 465, "label": "Результат → БЗ" }
+  ],
+  "messages": [
+    { "id": "m1", "from": "hermes", "to": "delegate", "y": 180, "label": "dsh-delegate.py 'задача'", "variant": "emphasis" },
+    { "id": "m2", "from": "delegate", "to": "dsh", "y": 215, "label": "harness.run(task, session)", "variant": "default" },
+    { "id": "m3", "from": "dsh", "to": "refs", "y": 250, "label": "читать DESIGN.md / экраны", "variant": "security" },
+    { "id": "m4", "from": "refs", "to": "dsh", "y": 285, "label": "материалы (vision)", "variant": "return" },
+    { "id": "m5", "from": "dsh", "to": "od", "y": 325, "label": "создать артефакт", "variant": "emphasis" },
+    { "id": "m6", "from": "od", "to": "dsh", "y": 358, "label": "html · pdf · zip", "variant": "return" },
+    { "id": "m7", "from": "dsh", "to": "hermes", "y": 392, "label": "final_response", "variant": "return" },
+    { "id": "m8", "from": "hermes", "to": "bz", "y": 430, "label": "запись знаний", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "delegate", "from": 175, "to": 225, "type": "backend" },
+    { "participant": "dsh", "from": 175, "to": 400, "type": "backend" },
+    { "participant": "refs", "from": 245, "to": 300, "type": "external" },
+    { "participant": "od", "from": 320, "to": 370, "type": "frontend" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Как делегируется", "items": ["Hermes → dsh-delegate.py (обязательно с source ~/studio/.env)", "dsh открывает профиль open-design → OpenDesign-движок", "Сессия сохраняется — session-id = продолжение диалога"] },
+    { "dot": "amber", "title": "Питфолл", "items": ["Без source ~/studio/.env — dsh стартует без ключа и молча выходит", "Node ≥22 для dsh CLI; OpenDesign ~ Node 24", "dsh видит файлы ВНЕ workspace (danger-full-access)"] }
+  ]
+}

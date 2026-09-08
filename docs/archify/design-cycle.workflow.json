@@ -1,0 +1,49 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Студия дизайна — цикл дизайн-задачи",
+    "quality_profile": "showcase",
+    "viewBox": [1000, 786],
+    "views": [
+      { "id": "research", "label": "Исследование", "focus": ["diagnose", "research", "plan"], "note": "Диагностика INoT, дизайн-исследование и план с ролями." },
+      { "id": "implement", "label": "Реализация и фикс", "focus": ["plan", "implement", "verify", "fix"], "note": "dsh генерит, тест ловит, фикс возвращает реализацию." },
+      { "id": "accept", "label": "Приёмка", "focus": ["verify", "accept"], "note": "Верификация по стандарту приёмки UI → в базу знаний." }
+    ]
+  },
+  "lanes": [
+    { "id": "planning", "label": "Планирование (Hermes)" },
+    { "id": "research", "label": "Исследование" },
+    { "id": "implement", "label": "Реализация (dsh)" },
+    { "id": "verify", "label": "Верификация (Holix)" },
+    { "id": "deliver", "label": "Приёмка" }
+  ],
+  "phases": [
+    { "id": "ph1", "label": "Подготовка", "fromCol": 0, "toCol": 2, "variant": "emphasis" },
+    { "id": "ph2", "label": "Цикл", "fromCol": 3, "toCol": 4, "variant": "dashed" },
+    { "id": "ph3", "label": "Сдача", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["diagnose", "research", "plan", "implement", "verify", "accept"],
+  "nodes": [
+    { "id": "diagnose", "lane": "planning", "col": 0, "type": "security", "label": "Диагностика INoT", "sublabel": "тип + 4 агента + блок", "width": 150 },
+    { "id": "research", "lane": "research", "col": 1, "type": "backend", "label": "Исследование", "sublabel": "конкуренты · WeChat · screen", "width": 160, "tag": "референсы" },
+    { "id": "plan", "lane": "planning", "col": 2, "type": "security", "label": "План с ролями", "sublabel": "кто делает / тестирует / проверяет", "width": 175 },
+    { "id": "implement", "lane": "implement", "col": 3, "type": "backend", "label": "Реализация (dsh)", "sublabel": "dsh --profile open-design", "width": 160, "tag": "артефакт" },
+    { "id": "verify", "lane": "verify", "col": 4, "type": "frontend", "label": "Тест", "sublabel": "визуальная проверка", "width": 140 },
+    { "id": "fix", "lane": "implement", "col": 4, "type": "backend", "label": "Фикс", "sublabel": "итерация dsh", "width": 110 },
+    { "id": "accept", "lane": "deliver", "col": 5, "type": "cloud", "label": "Приёмка + в БЗ", "sublabel": "стандарт приёмки UI", "width": 160 }
+  ],
+  "edges": [
+    { "from": "diagnose", "to": "research", "label": "тип", "variant": "emphasis" },
+    { "from": "research", "to": "plan", "label": "выводы" },
+    { "from": "plan", "to": "implement", "label": "ТЗ", "variant": "emphasis" },
+    { "from": "implement", "to": "verify", "label": "артефакт" },
+    { "from": "verify", "to": "fix", "label": "не прошёл", "variant": "security", "role": "error" },
+    { "from": "fix", "to": "verify", "label": "повтор", "variant": "dashed", "role": "return" },
+    { "from": "verify", "to": "accept", "label": "принято", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Цикл", "items": ["Исследование → план с ролями → реализация (dsh) → тест → фикс → приёмка", "Фикс возвращает реализацию (итерация dsh)", "Результат фиксируется в базе знаний"] },
+    { "dot": "rose", "title": "Стандарт приёмки", "items": ["Компактные карточки, рац. пространство, отступы", "«инфо сверху / изображение снизу отдельно»", "Некомпактность = брак"] }
+  ]
+}

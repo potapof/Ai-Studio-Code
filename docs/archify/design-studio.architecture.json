@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Студия дизайна — стек (Hermes → dsh → OpenDesign)",
+    "quality_profile": "showcase",
+    "viewBox": [880, 560]
+  },
+  "components": [
+    { "id": "hermes", "type": "external", "label": "Hermes", "sublabel": "оркестратор", "pos": [40, 190], "size": [140, 56] },
+    { "id": "herdr", "type": "messagebus", "label": "Herdr", "sublabel": "мультиплексор :8010", "pos": [230, 190], "size": [150, 56] },
+    { "id": "dsh", "type": "backend", "label": "dsh", "sublabel": "DeepSeek Harness", "tag": "headless · open-design", "pos": [440, 140], "size": [170, 56] },
+    { "id": "od", "type": "frontend", "label": "OpenDesign", "sublabel": "daemon :7456 + Web-UI", "tag": "движок артефактов", "pos": [440, 260], "size": [170, 56] },
+    { "id": "others", "type": "backend", "label": "Holix / OpenHands", "sublabel": "dev · test", "pos": [230, 340], "size": [170, 56] },
+    { "id": "refs", "type": "external", "label": "Дизайн-ресурсы", "sublabel": "screen/ DESIGN + PNG", "pos": [680, 140], "size": [170, 56] },
+    { "id": "artifacts", "type": "external", "label": "Артефакты", "sublabel": "html·pdf·pptx·mp4", "pos": [680, 260], "size": [170, 56] },
+    { "id": "brain", "type": "database", "label": "hermes_brain", "sublabel": "база знаний", "pos": [680, 420], "size": [160, 52] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Студия дизайна", "wraps": ["dsh", "od", "refs", "artifacts"], "pad": 20 }
+  ],
+  "connections": [
+    { "id": "c1", "from": "hermes", "to": "herdr", "label": "волны", "variant": "emphasis" },
+    { "id": "c2", "from": "herdr", "to": "dsh", "label": "дизайн", "variant": "emphasis", "labelAt": [410, 170] },
+    { "id": "c3", "from": "herdr", "to": "others", "label": "dev / test", "variant": "dashed", "fromSide": "bottom", "toSide": "top" },
+    { "id": "c4", "from": "dsh", "to": "od", "label": "dsh-runtime", "fromSide": "bottom", "toSide": "top", "labelAt": [520, 230] },
+    { "id": "c5", "from": "dsh", "to": "refs", "label": "материалы", "fromSide": "right", "toSide": "left", "labelAt": [648, 146] },
+    { "id": "c6", "from": "od", "to": "artifacts", "label": "артефакты", "fromSide": "right", "toSide": "left", "labelAt": [648, 266] },
+    { "id": "c7", "from": "artifacts", "to": "brain", "label": "в БЗ", "fromSide": "bottom", "toSide": "top", "labelAt": [770, 360] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Роли", "items": ["Hermes — управляющий оркестратор (решения, арбитраж)", "dsh — исполнитель ДИЗАЙН (OpenDesign-профиль)", "Holix / OpenHands — dev / test (волны)"] },
+    { "dot": "emerald", "title": "Стек дизайна", "items": ["OpenDesign — движок: web/desktop/mobile, дашборды, слайды, изображения, video", "Встроен в dsh через плагин @open-design/dsh-runtime", "экспорт HTML / PDF / PPTX / MP4, live preview"] }
+  ]
+}

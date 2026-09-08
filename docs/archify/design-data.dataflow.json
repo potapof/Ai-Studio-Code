@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Студия дизайна — данные: ресурсы → dsh → OpenDesign → артефакт",
+    "quality_profile": "showcase",
+    "viewBox": [960, 520],
+    "views": [
+      { "id": "sources", "label": "Источники", "focus": ["designdocs", "screens"], "note": "DESIGN-система и 313 PNG-экранов из дизайн-материалов." },
+      { "id": "vision", "label": "dsh (vision)", "focus": ["dsh"], "note": "Текст + изображения читаются мультимедиа-моделью." },
+      { "id": "delivery", "label": "Доставка", "focus": ["od", "artifact"], "note": "OpenDesign генерит и экспортирует артефакт (live preview + файл)." }
+    ]
+  },
+  "stages": [
+    { "label": "Sources" },
+    { "label": "Analyze" },
+    { "label": "Generate" },
+    { "label": "Deliver" }
+  ],
+  "nodes": [
+    { "id": "designdocs", "type": "external", "label": "DESIGN.md", "sublabel": "дизайн-система", "stage": 0, "row": 0, "tag": "UI_KIT · PATTERNS" },
+    { "id": "screens", "type": "external", "label": "Экраны (PNG)", "sublabel": "313 референсов", "stage": 0, "row": 2, "tag": "PC + моб" },
+    { "id": "dsh", "type": "backend", "label": "dsh (vision)", "sublabel": "flash-vision-exp", "stage": 1, "row": 1, "tag": "читает" },
+    { "id": "od", "type": "frontend", "label": "OpenDesign", "sublabel": "движок артефактов", "stage": 2, "row": 1, "tag": "генерит" },
+    { "id": "artifact", "type": "external", "label": "Артефакт", "sublabel": "html·pdf·pptx·mp4", "stage": 3, "row": 1, "tag": "live preview" }
+  ],
+  "flows": [
+    { "id": "f1", "from": "designdocs", "to": "dsh", "label": "дизайн-система", "classification": "текст", "variant": "emphasis" },
+    { "id": "f2", "from": "screens", "to": "dsh", "label": "экраны (vision)", "classification": "изображения", "variant": "security" },
+    { "id": "f3", "from": "dsh", "to": "od", "label": "артефакт", "classification": "генерация", "variant": "emphasis" },
+    { "id": "f4", "from": "od", "to": "artifact", "label": "экспорт", "classification": "html/pdf/zip", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Путь", "items": ["Ресурсы (текст + изображения) → dsh с vision-моделью", "dsh читает DESIGN.md / UI_KIT / экраны", "OpenDesign собирает и экспортирует артефакт"] },
+    { "dot": "amber", "title": "Формат", "items": ["Экспорт HTML / PDF / PPTX / MP4", "Sandboxed iframe preview", "Файлы остаются в workflow OpenDesign для live-preview"] }
+  ]
+}
