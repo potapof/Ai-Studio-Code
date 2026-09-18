@@ -15,6 +15,10 @@ echo "дата: $(date '+%F %T')"
 echo "── 1. Демоны и gateway ──"
 herdr status 2>/dev/null | grep -q 'status: running' && ok "herdr daemon" || bad "herdr daemon (нужен: herdr / systemctl --user start herdr)"
 curl -s --max-time 5 http://127.0.0.1:8010/health | grep -q '"status":"ok"' && ok "Holix gateway :8010" || bad "Holix gateway :8010 (нужен: ~/studio/scripts/start-holix-gateway.sh)"
+# Релей к подписке OpenCode Go: модель всех агентов deepseek-v4.1-flash живёт только
+# на opencode.ai/zen/go/v1 и требует заголовок x-opencode-session → ходим через релей.
+curl -s --max-time 5 http://127.0.0.1:8012/health | grep -q '"status":"ok"' && ok "zen-go-relay :8012 (OpenCode Go → deepseek-v4.1-flash)" || bad "zen-go-relay :8012 (нужен: systemctl --user start zen-go-relay.service)"
+[ -n "$(grep -m1 '^OPENCODE_GO_API_KEY=' "$HOME/studio/.env" 2>/dev/null | cut -d= -f2-)" ] && ok "ключ подписки OpenCode Go (~/studio/.env)" || bad "ключ подписки OpenCode Go (добавить OPENCODE_GO_API_KEY=... в ~/studio/.env)"
 
 echo "── 2. MAXSCRM: backend + frontend ──"
 B=$(curl -s --max-time 5 http://localhost:3000/api/v1/health 2>/dev/null)
@@ -62,11 +66,25 @@ P=$(dsh --profile open-design --probe 2>/dev/null | grep -o '"runtime":"open-des
 OD=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:7456/ 2>/dev/null)
 [ "$OD" = "200" ] && ok "OpenDesign daemon :7456 (web-UI)" || bad "OpenDesign daemon :7456 (нужен: cd ~/studio/open-design/apps/daemon && node dist/cli.js --no-open)"
 
+echo "── 8. Схемы (archify) ──"
+ARCH_SKILL=~/.hermes/skills/software-development/archify/bin/archify.mjs
+if [ -f "$ARCH_SKILL" ]; then
+  A=$(node "$ARCH_SKILL" doctor 2>/dev/null | grep -c '^\[ok\]')
+  [ "$A" -gt 0 ] && ok "archify CLI (doctor: $A ok)" || bad "archify CLI (doctor не прошёл)"
+else
+  bad "archify CLI (нужен: ~/studio/archify — tt-a1i/archify; скилл в ~/.hermes/skills/software-development/archify)"
+fi
+if ls ~/.dsh/profiles/web/node_modules/@tt-a1i/archify-dsh >/dev/null 2>&1; then
+  ok "DSH-плагин archify-dsh (профиль web)"
+else
+  info "DSH-плагин archify-dsh не установлен (по желанию: dsh plugin --profile web add @tt-a1i/archify-dsh@0.1.0)"
+fi
+
 if [ "$1" = "--deep" ]; then
-  echo "── 8. Smoke воркеров (--deep, ~1-2 мин) ──"
+  echo "── 9. Smoke воркеров (--deep, ~1-2 мин) ──"
   W=$(~/studio/scripts/holix-delegate.sh python-dev "Reply with exactly: W-OK" --timeout 120 2>&1 | tail -1)
   echo "$W" | grep -q "W-OK" && ok "воркер Holix python-dev: W-OK" || bad "воркер Holix python-dev: $W"
-  D=$(set -a; source ~/studio/.env 2>/dev/null; set +a; DSH_MODEL=deepseek-v4-flash timeout 120 dsh --profile headless "Reply with exactly: D-OK" 2>&1 | tail -1)
+  D=$(set -a; source ~/studio/.env 2>/dev/null; set +a; DSH_MODEL=deepseek-v4.1-flash timeout 120 dsh --profile headless "Reply with exactly: D-OK" 2>&1 | tail -1)
   echo "$D" | grep -q "D-OK" && ok "воркер dsh headless: D-OK" || bad "воркер dsh headless: $D"
 fi
 

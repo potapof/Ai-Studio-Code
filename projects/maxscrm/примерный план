@@ -1,0 +1,3115 @@
+Отлично! Учитываю контекст MAXSCRM и требование к архитектуре: базовый магазин (бесплатно) + расширяемые плагины (маркетплейс). Разбиваю на 6 итераций.
+
+***
+
+## Итерация 1/6: Стратегия, архитектура и MVP-ядро
+
+**Цель:** Определить архитектуру, стек и обязательный набор функций для бесплатной версии
+
+### 1.1 Архитектурные принципы
+
+**Модульная архитектура (Core + Plugins):**
+- **Core (бесплатно):** Базовый магазин с минимально жизнеспособным набором функций для запуска.
+- **Plugins (платно):** Расширяемые модули, покупаемые в маркетплейсе MAXSCRM (CRM, аналитика, маркетинг, интеграции).
+- **API-first:** Все функции ядра доступны через API для плагинов.
+
+**Технический стек (согласно MAXSCRM Final Stack Verdict):**
+- **Frontend:** React + TypeScript (компоненты магазина как mini-app внутри MAX). [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+- **Backend:** NestJS (модульный монолит) с чётким разделением на Core и Plugin-модули. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+- **База данных:** PostgreSQL с RLS (Row Level Security) для мультитенантности. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+- **Изоляция плагинов:** Iframe или V8-контейнеры для безопасности маркетплейса. [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+
+### 1.2 Обязательные функции Core (бесплатная версия)
+
+| Модуль | Функции |
+|--------|---------|
+| **Каталог товаров** | CRUD товаров, категории, фото (до 5 на товар), базовые характеристики, поиск, фильтры |
+| **Корзина и заказ** | Добавление/удаление, оформление заказа, выбор способа доставки (курьер/самовывоз), интеграция с MAX Pay |
+| **Личный кабинет продавца (админка)** | Управление товарами, просмотр заказов, базовая статистика (выручка, кол-во заказов), управление статусами заказов |
+| **Личный кабинет покупателя** | История заказов, трекинг статуса, повторный заказ |
+| **Базовая аналитика** | Выручка за период, топ-5 товаров, кол-во заказов |
+| **Уведомления** | Push/внутренние уведомления о новом заказе, изменении статуса |
+
+### 1.3 Структура базы данных (Core)
+
+**Основные таблицы:**
+- `shops` (id, owner_id, name, settings_json, created_at)
+- `products` (id, shop_id, name, description, price, stock, category_id, images_json)
+- `categories` (id, shop_id, name, parent_id)
+- `orders` (id, shop_id, customer_id, total, status, delivery_type, address_json, created_at)
+- `order_items` (id, order_id, product_id, quantity, price)
+- `shop_settings` (id, shop_id, key, value) — для кастомизации
+
+### 1.4 Frontend-архитектура (React)
+
+**Структура компонентов:**
+```
+src/
+├── core/
+│   ├── catalog/ (ProductList, ProductCard, CategoryFilter)
+│   ├── cart/ (Cart, CartItem, CheckoutForm)
+│   ├── orders/ (OrderList, OrderDetail, OrderStatus)
+│   └── admin/ (ProductForm, Dashboard, OrdersTable)
+├── plugins/ (пустая папка для подключаемых модулей)
+├── shared/ (UI-кит, хуки, утилиты)
+└── App.tsx (роутинг, интеграция с MAX SDK)
+```
+
+### 1.5 Интеграция с MAX Messenger
+
+- **SDK:** Использование `maxscrm-sdk` для аутентификации, push-уведомлений, навигации .
+- **UI:** Встраивание магазина как mini-app внутри MAX (iframe или нативный компонент).
+- **Pay:** Интеграция с MAX Pay через API (аналог WeChat Pay).
+
+***
+
+**Продолжить к Итерации 2/6?** (Углубимся в детальную спецификацию админ-панели продавца: управление товарами, заказами, базовая аналитика)
+
+## Итерация 2/6: Детальная спецификация админ-панели (Core)
+
+**Цель:** Полное описание всех экранов, полей и логики административной части для бесплатной версии
+
+***
+
+### 2.1 Дашборд продавца (Главный экран)
+
+**Назначение:** Быстрый обзор состояния магазина
+
+**Виджеты:**
+1. **KPI-карточки (верхний ряд):**
+   - Выручка сегодня / вчера / неделя (с % изменения)
+   - Кол-во заказов сегодня / в обработке / выполнено
+   - Средний чек (AOV)
+   - Конверсия (посетители → заказы)
+
+2. **График выручки (линейный):**
+   - Период: 7 / 30 / 90 дней (переключатель)
+   - Ось X: даты, Ось Y: сумма в валюте
+
+3. **Топ-5 товаров (таблица):**
+   - Колонки: Название, Продано (шт), Выручка, Остаток
+   - Сортировка: по умолчанию по выручке
+
+4. **Последние заказы (таблица, 10 строк):**
+   - Колонки: № заказа, Дата, Клиент, Сумма, Статус, Действия (просмотр)
+   - Клик по строке → детализация заказа
+
+5. **Уведомления (боковая панель):**
+   - Новые заказы (непрочитанные)
+   - Низкий остаток товаров (<5 шт)
+   - Возвраты/споры
+
+**Технические требования:**
+- API: `GET /api/shop/:id/dashboard` (агрегированные данные за 1 запрос)
+- Кэширование: 5 минут для KPI, 1 минута для заказов
+- Обновление в реальном времени: WebSocket для новых заказов
+
+***
+
+### 2.2 Управление товарами (PIM — Product Information Management)
+
+**Экран 1: Список товаров**
+
+**Элементы:**
+- **Фильтры (левая панель):**
+  - Категория (древовидный селектор)
+  - Статус: активен / скрыт / нет в наличии
+  - Цена: от/до
+  - Поиск по названию/SKU
+
+- **Таблица товаров:**
+  - Колонки: Фото (миниатюра), Название, Категория, Цена, Остаток, Статус, Дата обновления, Действия (редактировать, скрыть, удалить)
+  - Массовые действия: выбор чекбоксами → изменить статус/категорию/цену (bulk edit)
+  - Пагинация: 20/50/100 на страницу
+
+- **Кнопка «Добавить товар»:** Открывает форму создания
+
+**Экран 2: Создание/редактирование товара**
+
+**Вкладки формы:**
+1. **Основное:**
+   - Название (обязательно, до 200 символов)
+   - Описание (Rich Text Editor: текст, фото, списки, до 10,000 символов)
+   - Категория (выпадающий список с поиском)
+   - Артикул/SKU (уникальный, автогенерация или ручной ввод)
+   - Бренд (текстовое поле, автодополнение из существующих)
+
+2. **Цена и остатки:**
+   - Цена (обязательно, валюта магазина)
+   - Старая цена (для отображения скидки)
+   - Себестоимость (скрыто от покупателей, для расчёта маржи)
+   - Остаток на складе (число, ручное или авто-списание при заказе)
+   - Минимальный остаток (для уведомления)
+   - Управление остатками: +/− кнопка, история изменений (лог)
+
+3. **Фото и медиа:**
+   - Загрузка до 5 фото (drag & drop, до 5MB каждое, форматы: JPG/PNG/WebP)
+   - Главное фото (перетаскивание на 1-ю позицию)
+   - Видео (ссылка на YouTube/Vimeo или загрузка до 100MB)
+   - Автоматическая оптимизация: сжатие, создание миниатюр (100x100, 400x400)
+
+4. **Характеристики:**
+   - Динамические атрибуты (зависят от категории):
+     - Пример для «Одежда»: Размер (S/M/L/XL), Цвет, Материал, Состав
+     - Пример для «Электроника»: Бренд, Модель, Гарантия, Страна
+   - Кнопка «Добавить характеристику»: ключ + значение
+   - Отображение на витрине: таблица «Характеристики»
+
+5. **Варианты товара (если есть):**
+   - Конструктор вариантов: выбор атрибутов (например, Размер + Цвет)
+   - Генерация комбинаций: S/Красный, S/Синий, M/Красный...
+   - Для каждого варианта: отдельная цена, остаток, фото (опционально)
+   - Массовое редактирование вариантов (bulk edit по колонкам)
+
+6. **SEO и видимость:**
+   - URL-слаб (автогенерация из названия, ручное редактирование)
+   - Meta Title (до 60 символов)
+   - Meta Description (до 160 символов)
+   - Видимость: опубликован / скрыт / по расписанию (дата публикации)
+
+**Действия:**
+- Сохранить черновик / Опубликовать
+- Предпросмотр (как будет выглядеть на витрине)
+- Удалить товар (с подтверждением, если есть заказы — архивирование вместо удаления)
+
+**Экран 3: Массовое редактирование (Bulk Edit)**
+
+**Сценарий:** Пользователь выбрал 20 товаров → нажал «Редактировать выбранные»
+
+**Поля для массового изменения:**
+- Цена: установить / увеличить на % / уменьшить на %
+- Категория: переместить в другую
+- Статус: активен / скрыт
+- Теги: добавить / удалить
+
+**Валидация:** Предпросмотр изменений → подтверждение → выполнение (фоновая задача с прогресс-баром)
+
+***
+
+### 2.3 Управление заказами (Order Management)
+
+**Экран 1: Список заказов**
+
+**Фильтры:**
+- Статус: все / новый / в обработке / отправлен / выполнен / отменён / возврат
+- Дата: диапазон (календарь)
+- Способ оплаты: оплачен / не оплачен
+- Способ доставки: курьер / самовывоз / почта
+- Поиск: по № заказа, имени клиента, телефону
+
+**Таблица заказов:**
+- Колонки: № заказа, Дата, Клиент (имя + телефон), Сумма, Статус, Оплата, Доставка, Действия (просмотр)
+- Сортировка: по умолчанию по дате (убывание)
+- Массовые действия: изменить статус / распечатать накладные / экспортировать в CSV
+
+**Экран 2: Детализация заказа**
+
+**Блоки:**
+1. **Информация о заказе (верх):**
+   - № заказа, дата создания, статус (выпадающий список для смены)
+   - Кнопки действий: «Распечатать накладную», «Отправить чек», «Отменить заказ»
+
+2. **Клиент:**
+   - Имя, телефон, email (ссылка на профиль клиента в CRM, если есть)
+   - История заказов этого клиента (мини-таблица: 5 последних)
+
+3. **Товары в заказе (таблица):**
+   - Колонки: Фото, Название, Вариант (если есть), Цена, Кол-во, Сумма
+   - Итого по товарам, скидка (если есть), доставка, итого к оплате
+
+4. **Оплата:**
+   - Статус: оплачен / не оплачен / частично
+   - Способ: MAX Pay / наличными / при получении
+   - Транзакция ID, дата оплаты, чек (ссылка на скачивание)
+
+5. **Доставка:**
+   - Тип: курьер / самовывоз / почта
+   - Адрес: текст + кнопка «Показать на карте» (интеграция с 2GIS/Яндекс.Карты)
+   - Трекинг-номер (для почты, с ссылкой на трекинг)
+   - Комментарий к доставке (от клиента)
+
+6. **Комментарии и история:**
+   - Внутренние заметки менеджера (видны только в админке)
+   - История изменений статуса (лог: кто, когда, какой статус)
+   - Переписка с клиентом (если была через чат)
+
+**Смена статуса заказа:**
+- При смене статуса → автоматическое уведомление клиенту (push/SMS/email)
+- Триггеры:
+  - «В обработке» → резервирование товара на складе
+  - «Отправлен» → отправка трекинг-номера
+  - «Выполнен» → запрос отзыва через 3 дня
+  - «Возврат» → создание заявки на возврат, уведомление менеджеру
+
+**Экран 3: Печать и экспорт**
+
+- **Накладная (A4):** Шаблон с логотипом магазина, список товаров, адрес, штрихкод заказа
+- **Чек:** PDF с деталями оплаты (интеграция с фискальным сервисом, если требуется)
+- **Экспорт заказов:** CSV/Excel (выбор колонок, фильтр по дате/статусу)
+
+***
+
+### 2.4 Базовая аналитика (Reporting)
+
+**Экран 1: Обзор (Dashboard)**
+
+**Метрики:**
+- **Выручка:** Сегодня / неделя / месяц / год (с графиком по дням)
+- **Заказы:** Кол-во, средний чек, конверсия (посетители → заказы)
+- **Товары:** Топ-10 по продажам (шт и выручка), товары с низким остатком
+
+**Фильтры:**
+- Период: кастомный диапазон или пресеты (7/30/90 дней, месяц, год)
+- Канал трафика: все / MAX / прямые / другие (если есть UTM-метки)
+
+**Экран 2: Товарная аналитика**
+
+**Таблица «Все товары»:**
+- Колонки: Название, Категория, Продано (шт), Выручка, Остаток, Маржа (если введена себестоимость), Конверсия (просмотры → покупки)
+- Сортировка: по любой колонке
+- Экспорт: CSV/Excel
+
+**Воронка по товару:**
+- При клике на товар → детализация:
+  - Просмотры карточки
+  - Добавления в корзину
+  - Покупки
+  - Конверсия на каждом этапе
+
+**Экран 3: Клиентская аналитика (базовая)**
+
+- **Новые клиенты:** Кол-во за период, график по дням
+- **Повторные покупки:** % клиентов с 2+ заказами
+- **Топ-10 клиентов:** по сумме покупок (имя, телефон, сумма, кол-во заказов)
+
+***
+
+### 2.5 Настройки магазина (Settings)
+
+**Вкладки:**
+1. **Основное:**
+   - Название магазина, логотип, описание
+   - Валюта, часовой пояс, язык
+   - Контакты (телефон, email, адрес для самовывоза)
+
+2. **Доставка:**
+   - Способы: курьер (цена/бесплатно от суммы), самовывоз (адреса), почта (тарифы)
+   - Зоны доставки: города/районы с отдельными тарифами
+
+3. **Оплата:**
+   - Подключённые методы: MAX Pay, наличными, при получении
+   - Настройки MAX Pay: API-ключи, статус (тест/продакшн)
+
+4. **Уведомления:**
+   - Каналы: push, SMS, email, Telegram-бот (опционально)
+   - События: новый заказ, оплата, отправка, возврат, низкий остаток
+   - Шаблоны сообщений (редактирование текста)
+
+5. **Команда:**
+   - Приглашение сотрудников по email/телефону
+   - Роли: админ (полный доступ), менеджер (заказы + товары), поддержка (только заказы + чаты)
+   - Лог действий: кто что изменил (аудит)
+
+6. **Интеграции (базовые):**
+   - MAX Pay (обязательно)
+   - 2GIS/Яндекс.Карты (для адресов)
+   - Экспорт товаров в CSV (для внешних площадок)
+
+***
+
+### 2.6 Технические требования к админке
+
+**Frontend (React):**
+- **Стейт-менеджмент:** Redux Toolkit или Zustand (для сложных форм товаров/заказов)
+- **Формы:** React Hook Form + Yup (валидация)
+- **Таблицы:** TanStack Table (сортировка, фильтры, пагинация, массовые действия)
+- **UI-кит:** Кастомный на основе MAXSCRM Design System (кнопки, инпуты, модалки) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/0be49010-cd2c-4db7-8c7d-6f859391491a/16_MINI-APP-DEV-GUIDE.md)
+- **Графики:** Recharts или Chart.js (дашборд, аналитика)
+
+**Backend (NestJS):**
+- **REST API:** RESTful endpoints для всех ресурсов (shops, products, orders, analytics)
+- **Валидация:** DTO + class-validator (строгая типизация входных данных)
+- **Авторизация:** JWT + RLS (Row Level Security в PostgreSQL для мультитенантности) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+- **Логирование:** Pino + Loki (аудит действий пользователей)
+
+**Безопасность:**
+- RLS-политики: каждый продавец видит только свои данные [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+- Rate limiting: 100 запросов/мин на пользователя
+- 2FA для админ-аккаунтов (опционально, можно в платный плагин)
+
+***
+
+**Продолжить к Итерации 3/6?** (Фронтенд магазина для покупателей: витрина, корзина, оформление заказа, личный кабинет)
+
+## Итерация 3/6: Фронтенд магазина для покупателей (Core)
+
+**Цель:** Полная спецификация витрины, корзины, оформления заказа и личного кабинета покупателя
+
+***
+
+### 3.1 Витрина магазина (Каталог)
+
+**Экран 1: Главная страница магазина**
+
+**Структура:**
+1. **Хедер:**
+   - Логотип магазина (кликабельный → на главную)
+   - Поиск (по названию товара, с автодополнением)
+   - Корзина (иконка с кол-вом товаров, дропдаун с мини-списком)
+   - Профиль (иконка → личный кабинет или вход/регистрация)
+   - Избранное (сердечко, если есть плагин)
+
+2. **Герой-блок (баннер):**
+   - Слайдер с промо-акциями (до 5 слайдов, автопереключение 5 сек)
+   - Кнопка CTA: «Смотреть каталог» / «Акция»
+   - Настраивается в админке (баннеры, ссылки)
+
+3. **Популярные категории (сетка):**
+   - 6–12 карточек категорий (иконка + название + кол-во товаров)
+   - Сортировка: по популярности / вручную из админки
+
+4. **Товары (табы):**
+   - Табы: «Новинки» / «Популярные» / «Акции» / «Все товары»
+   - Сетка товаров: 3–4 колонки (десктоп), 2 (планшет), 1–2 (мобильный)
+   - Карточка товара (см. ниже)
+   - Кнопка «Показать ещё» (бесконечный скролл или пагинация)
+
+5. **Футер:**
+   - Контакты, ссылки на разделы (О магазине, Доставка, Возврат)
+   - Соцсети (иконки)
+   - Копирайт, ссылки на политику конфиденциальности
+
+**Технические требования:**
+- **SSR/ISR:** Next.js для SEO-оптимизации (если магазин публичный вне MAX) или клиентский рендеринг внутри MAX [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/0be49010-cd2c-4db7-8c7d-6f859391491a/16_MINI-APP-DEV-GUIDE.md)
+- **Кэширование:** 5 минут для каталога, 1 минута для остатков
+- **Lazy loading:** Изображения товаров (blur-up плейсхолдер)
+
+***
+
+**Карточка товара (в каталоге):**
+
+**Элементы:**
+- **Фото:** Главное изображение (4:3 или 1:1), при наведении — слайдер миниатюр (2–3 фото)
+- **Бейджи:** «Новинка» / «−20%» / «Нет в наличии» (угловой, поверх фото)
+- **Избранное:** Сердечко в углу (сохраняет в профиль, требует авторизации)
+- **Название:** До 60 символов, 2 строки с обрезкой (ellipsis)
+- **Рейтинг:** Звёзды (1–5) + кол-во отзывов (если есть плагин отзывов)
+- **Цена:**
+  - Текущая (крупно, жирно)
+  - Старая (зачёркнуто, серым, если есть скидка)
+  - % скидки (бейдж рядом)
+- **Остаток:** «В наличии» / «Мало» (<5 шт) / «Нет в наличии»
+- **Варианты:** Быстрый выбор (например, цвет кружочками, размер кнопками)
+- **Кнопка «В корзину»:** Добавляет без перехода в карточку (с анимацией полёта в корзину)
+- **Кнопка «Быстрый просмотр»:** Модалка с кратким описанием и фото (не переходя в карточку)
+
+***
+
+**Экран 2: Страница категории**
+
+**Левая панель (фильтры):**
+- **Категории:** Дерево (родительская → дочерние), чекбоксы
+- **Цена:** Слайдер (мин/макс) + инпуты для точного ввода
+- **Характеристики:** Чекбоксы (например, «Материал: хлопок, шёлк», «Размер: S, M, L»)
+- **Бренд:** Чекбоксы с поиском
+- **Наличие:** «Только в наличии»
+- **Рейтинг:** «4+ звезды», «3+ звезды»
+- **Кнопки:** «Применить» / «Сбросить»
+
+**Основная область:**
+- **Сортировка:** По популярности / цене (возрастание/убывание) / новизне / рейтингу
+- **Сетка товаров:** Адаптивная (как в каталоге)
+- **Пагинация:** 20/50/100 товаров на страницу
+
+**Технические требования:**
+- **URL с фильтрами:** Читаемые слаги (например, `/category/odezhda?price=1000-5000&size=M,L`)
+- **История браузера:** При изменении фильтров → обновление URL (можно поделиться ссылкой)
+- **SEO:** Meta Title/Description из настроек категории
+
+***
+
+**Экран 3: Карточка товара (детальная)**
+
+**Структура:**
+1. **Галерея (левая колонка, 50% ширины):**
+   - Основное фото (крупно, зум по клику)
+   - Миниатюры (горизонтальный скролл, 5–8 фото)
+   - Видео (если есть, кнопка Play → модалка с плеером)
+   - 360° обзор (если есть плагин)
+
+2. **Инфо-блок (правая колонка):**
+   - **Название:** H1, до 100 символов
+   - **Артикул:** Серым, мелким
+   - **Рейтинг:** Звёзды + ссылка на отзывы (если есть)
+   - **Цена:**
+     - Текущая (крупно)
+     - Старая (зачёркнуто)
+     - % скидки
+   - **Варианты:**
+     - Выбор варианта (цвет, размер и т.д.) → кнопки/свайперы
+     - При выборе → обновление цены/остатка/фото
+   - **Остаток:** «В наличии» / «Мало (3 шт)» / «Нет в наличии»
+   - **Количество:** Инпут +/− (мин 1, макс 99 или остаток)
+   - **Кнопки:**
+     - «В корзину» (основная, большая)
+     - «Купить в 1 клик» (модалка: имя + телефон → менеджер перезванивает)
+     - «В избранное» (сердечко)
+   - **Доставка:** «Доставка: 2–4 дня, бесплатно от 5000₽» (ссылка на подробности)
+   - **Гарантия:** «14 дней на возврат»
+
+3. **Описание (внизу, на всю ширину):**
+   - Rich Text: текст, фото, списки, таблицы
+   - Вкладки: «Описание» / «Характеристики» / «Отзывы» (если есть)
+   - **Характеристики:** Таблица (ключ: значение)
+   - **Комплектация:** Что в коробке
+
+4. **Сопутствующие товары:**
+   - «Похожие товары» (сетка 4–8 товаров)
+   - «Часто покупают вместе» (кросс-селл, если есть плагин)
+
+**Технические требования:**
+- **Open Graph:** Мета-теги для шеринга в MAX (фото, название, цена)
+- **Микроразметка:** Schema.org Product (для SEO, если публичный)
+- **Кэширование:** 1 минута для остатка, 5 минут для описания
+
+***
+
+### 3.2 Корзина
+
+**Экран: Страница корзины**
+
+**Структура:**
+1. **Список товаров (таблица/список):**
+   - **Строка товара:**
+     - Фото (миниатюра 80x80)
+     - Название (ссылка на карточку)
+     - Вариант (например, «Размер: M, Цвет: Красный»)
+     - Цена (за 1 шт)
+     - Количество: инпут +/− (мин 1, макс остаток)
+     - Сумма (цена × кол-во)
+     - Кнопка «Удалить» (иконка корзины)
+   - **Итого по товарам:** Сумма без доставки и скидок
+
+2. **Промокод:**
+   - Инпут + кнопка «Применить»
+   - Валидация: проверка на валидность, срок действия, минимальную сумму
+   - Отображение: «Скидка: −500₽»
+
+3. **Блок «Итого» (правая колонка, sticky):**
+   - Товары: сумма
+   - Скидка: −XXX₽
+   - Доставка: XXX₽ (или «Бесплатно»)
+   - **Итого к оплате:** Крупно, жирно
+   - Кнопка «Оформить заказ»
+
+4. **Рекомендации (внизу):**
+   - «Вам может понравиться» (3–6 товаров, кросс-селл)
+   - «Добавьте ещё на 1000₽ для бесплатной доставки» (прогресс-бар)
+
+**Технические требования:**
+- **Синхронизация:** Корзина сохраняется в localStorage (гостевая) + в профиле (авторизованный)
+- **Обновление:** При изменении количества → пересчёт в реальном времени (без перезагрузки)
+- **Уведомление:** Если остаток товара изменился (например, пока товар в корзине, его купили) → алерт «Осталось 2 шт»
+
+***
+
+### 3.3 Оформление заказа (Checkout)
+
+**Экран: Многошаговая форма (3 шага)**
+
+**Шаг 1: Контактные данные**
+
+**Поля:**
+- **Для гостя:**
+  - Имя (обязательно)
+  - Фамилия (обязательно)
+  - Телефон (обязательно, маска ввода)
+  - Email (необязательно, для чека)
+  - Чекбокс: «Создать аккаунт» (пароль не требуется, вход по SMS)
+- **Для авторизованного:** Автозаполнение из профиля, кнопка «Изменить»
+
+**Кнопка:** «Далее: Доставка»
+
+***
+
+**Шаг 2: Доставка**
+
+**Выбор способа (радио-кнопки с карточками):**
+1. **Курьер:**
+   - Адрес: улица, дом, квартира, подъезд, этаж, код домофона
+   - Комментарий курьеру (инпут)
+   - Дата и время: календарь + таймслоты (9:00–21:00, шаг 2 часа)
+   - Стоимость: рассчитывается динамически (бесплатно от X₽)
+
+2. **Самовывоз:**
+   - Выбор точки из списка (название, адрес, режим работы)
+   - Карта (2GIS/Яндекс) с метками
+   - Инструкция: «Заберёте в течение 2 часов после подтверждения»
+
+3. **Почта:**
+   - Индекс, город, улица, дом, квартира
+   - Стоимость: по тарифам почты (калькулятор)
+   - Срок: 3–7 дней
+
+**Кнопка:** «Далее: Оплата»
+
+***
+
+**Шаг 3: Оплата**
+
+**Выбор способа (радио-кнопки):**
+1. **MAX Pay (онлайн):**
+   - Кнопка «Оплатить» → редирект на MAX Pay или модалка с платежной формой
+   - После оплаты → возврат на страницу «Спасибо»
+
+2. **Наличными:**
+   - При получении (курьеру) или в точке самовывоза
+   - Комиссия: 0%
+
+3. **При получении:**
+   - Для почты (наложенный платёж)
+   - Комиссия: +X%
+
+**Чекбокс:** «Согласен с условиями обработки персональных данных» (обязательно)
+
+**Кнопка:** «Оплатить заказ» (активна только если чекбокс отмечен)
+
+***
+
+**Экран: «Спасибо за заказ»**
+
+**Содержание:**
+- Номер заказа (крупно, с кнопкой «Скопировать»)
+- Статус: «Ожидает оплаты» / «Оплачен, обрабатывается»
+- Детали: список товаров, сумма, адрес, способ доставки
+- Трекинг: (если есть) ссылка на отслеживание
+- Кнопки:
+  - «В личный кабинет» (если авторизован)
+  - «Продолжить покупки» (на главную)
+  - «Поделиться» (в MAX, WhatsApp, Telegram)
+
+**Автоматика:**
+- Уведомление менеджеру (push/SMS)
+- Уведомление клиенту (push/SMS/email)
+- Резервирование товара на складе
+
+***
+
+### 3.4 Личный кабинет покупателя
+
+**Экран 1: Профиль**
+
+**Вкладки:**
+1. **Личные данные:**
+   - Имя, фамилия, телефон, email
+   - Кнопка «Изменить» (модалка с формой)
+   - Пароль (если создал аккаунт): смена пароля
+
+2. **Адреса доставки:**
+   - Список сохранённых адресов (название, адрес, комментарий)
+   - Кнопка «Добавить адрес» (форма: улица, дом, квартира и т.д.)
+   - Адрес по умолчанию (радио-кнопка)
+
+3. **Избранное:**
+   - Сетка товаров (как в каталоге)
+   - Кнопка «Удалить из избранного»
+   - Кнопка «В корзину» (для всех товаров сразу)
+
+***
+
+**Экран 2: История заказов**
+
+**Таблица заказов:**
+- Колонки: № заказа, Дата, Статус, Сумма, Товары (кол-во), Действия (просмотр)
+- Фильтры: по статусу (все / в обработке / отправлен / выполнен / отменён)
+- Пагинация: 10/20/50 на страницу
+
+**Детализация заказа (при клике):**
+- Детали заказа (как в админке, но упрощённо для клиента)
+- Трекинг доставки (статусы: «Принят» → «В пути» → «Доставлен»)
+- Кнопки:
+  - «Повторить заказ» (все товары в корзину)
+  - «Написать в поддержку» (если есть вопросы по заказу)
+  - «Оставить отзыв» (если заказ выполнен, плагин отзывов)
+
+***
+
+**Экран 3: Уведомления**
+
+**Список уведомлений:**
+- Типы: «Новый статус заказа», «Скидка на товар из избранного», «Персональное предложение»
+- Статус: прочитано / не прочитано (жирный шрифт)
+- Дата
+- Кнопка «Отметить все как прочитанные»
+
+**Настройки уведомлений:**
+- Чекбоксы: push, SMS, email
+- События: новые заказы, статусы, акции, персональные предложения
+
+***
+
+### 3.5 Технические требования к фронтенду
+
+**Стек:**
+- **React + TypeScript:** Строгая типизация компонентов и API [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/f6eb4206-0f0e-46c6-8580-e79ce1f6a9da/stek.md)
+- **Стейт-менеджмент:** Zustand (легковесный, для корзины, профиля, избранного)
+- **Роутинг:** React Router v6 (если SPA) или Next.js (если SSR)
+- **Формы:** React Hook Form + Zod (валидация)
+- **UI-кит:** Компоненты MAXSCRM (кнопки, инпуты, модалки) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/0be49010-cd2c-4db7-8c7d-6f859391491a/16_MINI-APP-DEV-GUIDE.md)
+- **HTTP-клиент:** Axios или TanStack Query (кэширование, retry, refetch)
+
+**Интеграция с MAX:**
+- **Аутентификация:** MAX SDK (OAuth 2.0, вход через профиль MAX) [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/0be49010-cd2c-4db7-8c7d-6f859391491a/16_MINI-APP-DEV-GUIDE.md)
+- **Push-уведомления:** MAX Push API (подписка на события)
+- **Навигация:** Deep linking внутри MAX (переход из чата в заказ)
+
+**Производительность:**
+- **Lazy loading:** Компоненты (карточки товаров, отзывы) по скроллу
+- **Code splitting:** Отдельные бандлы для каталога, корзины, админки
+- **Image optimization:** WebP, сжатие, srcset для разных экранов
+- **Бюджет:** <200KB (initial load), <2 сек до интерактивности
+
+**Безопасность:**
+- **CSP:** Content Security Policy (защита от XSS)
+- **Sanitization:** Очистка HTML в описаниях товаров (DOMPurify)
+- **Rate limiting:** 50 запросов/мин на пользователя (для API)
+
+***
+
+**Продолжить к Итерации 4/6?** (Ядро API, база данных, интеграция с MAX Pay, WebSocket
+
+## Итерация 4/6: Ядро API, база данных, интеграция с MAX Pay, WebSocket
+
+**Цель:** Детальная спецификация бэкенда, схемы БД, платёжной интеграции и realtime-коммуникации
+
+***
+
+### 4.1 Архитектура API (NestJS)
+
+**Структура модулей:**
+```
+src/
+├── shop/ (модуль магазина)
+│   ├── shop.controller.ts
+│   ├── shop.service.ts
+│   ├── shop.entity.ts
+│   └── dto/ (create-shop.dto.ts, update-shop.dto.ts)
+├── product/ (модуль товаров)
+│   ├── product.controller.ts
+│   ├── product.service.ts
+│   ├── product.entity.ts
+│   └── dto/
+├── order/ (модуль заказов)
+│   ├── order.controller.ts
+│   ├── order.service.ts
+│   ├── order.entity.ts
+│   └── dto/
+├── cart/ (модуль корзины)
+├── payment/ (модуль оплаты, MAX Pay)
+├── analytics/ (модуль аналитики)
+├── notification/ (модуль уведомлений, WebSocket)
+├── auth/ (аутентификация, JWT, MAX OAuth)
+└── plugin/ (модуль плагинов, загрузчик)
+```
+
+**RESTful endpoints (основные):**
+
+**Shop:**
+- `GET /api/shop/:id` — получить магазин по ID
+- `PUT /api/shop/:id` — обновить настройки магазина
+- `GET /api/shop/:id/dashboard` — дашборд (KPI, графики, топ-товары)
+
+**Product:**
+- `GET /api/products?shopId=:id&category=:cat&search=:q&page=1&limit=20` — список товаров с фильтрами
+- `GET /api/products/:id` — детализация товара
+- `POST /api/products` — создать товар (admin only)
+- `PUT /api/products/:id` — обновить товар
+- `DELETE /api/products/:id` — удалить товар
+- `POST /api/products/bulk` — массовое создание/обновление
+- `POST /api/products/:id/variants` — добавить варианты товара
+
+**Order:**
+- `GET /api/orders?shopId=:id&status=:status&page=1&limit=20` — список заказов
+- `GET /api/orders/:id` — детализация заказа
+- `POST /api/orders` — создать заказ (оформление)
+- `PUT /api/orders/:id/status` — сменить статус заказа
+- `POST /api/orders/:id/cancel` — отменить заказ
+- `GET /api/orders/:id/invoice` — скачать накладную (PDF)
+
+**Cart:**
+- `GET /api/cart/:userId` — получить корзину
+- `POST /api/cart/:userId/items` — добавить товар в корзину
+- `PUT /api/cart/:userId/items/:itemId` — изменить количество
+- `DELETE /api/cart/:userId/items/:itemId` — удалить товар
+
+**Payment:**
+- `POST /api/payment/initiate` — инициализация оплаты (возвращает URL/токен для MAX Pay)
+- `POST /api/payment/callback` — колбэк от MAX Pay (подтверждение оплаты)
+- `POST /api/payment/refund` — возврат средств
+
+**Analytics:**
+- `GET /api/analytics/overview?shopId=:id&from=2026-01-01&to=2026-01-31` — общая аналитика
+- `GET /api/analytics/products?shopId=:id` — аналитика по товарам
+- `GET /api/analytics/customers?shopId=:id` — аналитика по клиентам
+
+**Notification (WebSocket):**
+- `WS /ws/notifications` — подписка на уведомления
+- События: `new_order`, `order_status_changed`, `low_stock`, `payment_received`
+
+***
+
+### 4.2 Схема базы данных (PostgreSQL)
+
+**Основные таблицы (Core):**
+
+```sql
+-- Магазины
+CREATE TABLE shops (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL, -- ID владельца в MAX
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  logo_url TEXT,
+  description TEXT,
+  settings_json JSONB DEFAULT '{}', -- {currency, timezone, language, ...}
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Категории
+CREATE TABLE categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  parent_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Товары
+CREATE TABLE products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  sku VARCHAR(100),
+  price DECIMAL(10,2) NOT NULL,
+  old_price DECIMAL(10,2),
+  cost_price DECIMAL(10,2), -- себестоимость
+  stock INT DEFAULT 0,
+  min_stock INT DEFAULT 5,
+  status VARCHAR(20) DEFAULT 'active', -- active, hidden, out_of_stock
+  images_json JSONB DEFAULT '[]', -- [{url, alt, sort_order}]
+  attributes_json JSONB DEFAULT '{}', -- {color: "red", size: "M"}
+  seo_title VARCHAR(60),
+  seo_description VARCHAR(160),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Варианты товаров
+CREATE TABLE product_variants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  sku VARCHAR(100),
+  price DECIMAL(10,2),
+  stock INT DEFAULT 0,
+  attributes_json JSONB NOT NULL, -- {color: "red", size: "M"}
+  images_json JSONB DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Заказы
+CREATE TABLE orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL, -- ID клиента в MAX
+  customer_name VARCHAR(255) NOT NULL,
+  customer_phone VARCHAR(20) NOT NULL,
+  customer_email VARCHAR(255),
+  status VARCHAR(20) DEFAULT 'new', -- new, processing, shipped, delivered, cancelled, refund
+  total DECIMAL(10,2) NOT NULL,
+  discount DECIMAL(10,2) DEFAULT 0,
+  delivery_cost DECIMAL(10,2) DEFAULT 0,
+  delivery_type VARCHAR(20) NOT NULL, -- courier, pickup, post
+  delivery_address_json JSONB, -- {street, building, flat, comment}
+  payment_method VARCHAR(20) NOT NULL, -- max_pay, cash, on_delivery
+  payment_status VARCHAR(20) DEFAULT 'pending', -- pending, paid, refunded
+  payment_transaction_id VARCHAR(255),
+  tracking_number VARCHAR(100),
+  notes TEXT, -- комментарии менеджера
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Позиции заказа
+CREATE TABLE order_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  name VARCHAR(255) NOT NULL, -- название на момент заказа
+  price DECIMAL(10,2) NOT NULL,
+  quantity INT NOT NULL,
+  total DECIMAL(10,2) NOT NULL
+);
+
+-- Корзина
+CREATE TABLE carts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL, -- ID пользователя в MAX
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE cart_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Настройки магазина
+CREATE TABLE shop_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  key VARCHAR(100) NOT NULL,
+  value TEXT NOT NULL,
+  UNIQUE(shop_id, key)
+);
+
+-- Уведомления
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  type VARCHAR(50) NOT NULL, -- new_order, order_status, low_stock, ...
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Индексы для производительности
+CREATE INDEX idx_products_shop_id ON products(shop_id);
+CREATE INDEX idx_products_category_id ON products(category_id);
+CREATE INDEX idx_orders_shop_id ON orders(shop_id);
+CREATE INDEX idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX idx_cart_items_cart_id ON cart_items(cart_id);
+```
+
+**RLS (Row Level Security) для мультитенантности:**
+
+```sql
+-- Включаем RLS
+ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+-- Политики: продавец видит только свои товары/заказы
+CREATE POLICY shop_owner_policy ON shops
+  FOR ALL
+  USING (owner_id = current_setting('app.current_user_id')::uuid);
+
+CREATE POLICY product_shop_policy ON products
+  FOR ALL
+  USING (shop_id IN (
+    SELECT id FROM shops WHERE owner_id = current_setting('app.current_user_id')::uuid
+  ));
+
+CREATE POLICY order_shop_policy ON orders
+  FOR ALL
+  USING (shop_id IN (
+    SELECT id FROM shops WHERE owner_id = current_setting('app.current_user_id')::uuid
+  ));
+```
+
+***
+
+### 4.3 Интеграция с MAX Pay
+
+**Шаг 1: Регистрация магазина в MAX Pay**
+
+- Получить API-ключи в личном кабинете MAX Pay (test + production)
+- Настроить webhook URL для колбэков: `https://your-api.com/api/payment/callback`
+
+**Шаг 2: Инициализация оплаты (бэкенд)**
+
+```typescript
+// payment.service.ts
+async initiatePayment(orderId: string, userId: string) {
+  const order = await this.orderRepository.findOne(orderId);
+  
+  // Создаём платёж в MAX Pay
+  const payment = await this.maxPayClient.createPayment({
+    amount: order.total,
+    currency: 'RUB',
+    order_id: orderId,
+    user_id: userId,
+    return_url: `https://your-shop.com/order/${orderId}/success`,
+    callback_url: 'https://your-api.com/api/payment/callback',
+  });
+  
+  // Сохраняем transaction_id в заказе
+  await this.orderRepository.update(orderId, {
+    payment_transaction_id: payment.id,
+    payment_status: 'pending',
+  });
+  
+  return { payment_url: payment.url, transaction_id: payment.id };
+}
+```
+
+**Шаг 3: Обработка колбэка от MAX Pay**
+
+```typescript
+// payment.controller.ts
+@Post('callback')
+async handleCallback(@Body() callback: MaxPayCallback) {
+  // 1. Проверяем подпись (signature)
+  const isValid = this.maxPayClient.verifySignature(callback);
+  if (!isValid) throw new HttpException('Invalid signature', 400);
+  
+  // 2. Обновляем статус заказа
+  await this.orderService.updatePaymentStatus(
+    callback.order_id,
+    callback.status === 'success' ? 'paid' : 'failed',
+    callback.transaction_id,
+  );
+  
+  // 3. Отправляем уведомление продавцу (WebSocket)
+  this.notificationService.emit('payment_received', {
+    shop_id: callback.shop_id,
+    order_id: callback.order_id,
+    amount: callback.amount,
+  });
+  
+  // 4. Отправляем чек клиенту (email/push)
+  await this.notificationService.sendReceipt(callback.user_id, callback.order_id);
+  
+  return { status: 'ok' };
+}
+```
+
+**Шаг 4: Возврат средств (refund)**
+
+```typescript
+async refundPayment(orderId: string, amount?: number) {
+  const order = await this.orderRepository.findOne(orderId);
+  
+  const refund = await this.maxPayClient.refund({
+    transaction_id: order.payment_transaction_id,
+    amount: amount || order.total,
+  });
+  
+  await this.orderRepository.update(orderId, {
+    payment_status: 'refunded',
+  });
+  
+  return refund;
+}
+```
+
+**Безопасность:**
+- Проверка подписи (HMAC-SHA256) для всех колбэков
+- Idempotency key для предотвращения дублирования платежей
+- Логирование всех платёжных событий
+
+***
+
+### 4.4 WebSocket для realtime-уведомлений
+
+**Серверная часть (NestJS Gateway):**
+
+```typescript
+// notification.gateway.ts
+@WebSocketGateway({
+  cors: { origin: 'https://your-frontend.com' },
+})
+export class NotificationGateway implements OnGatewayConnection {
+  @WebSocketServer()
+  server: Server;
+
+  // При подключении клиента
+  handleConnection(client: WebSocket, req: Request) {
+    const userId = this.extractUserIdFromToken(req);
+    client.join(`user:${userId}`);
+  }
+
+  // Отправка уведомления
+  sendNotification(userId: string, event: string, data: any) {
+    this.server.to(`user:${userId}`).emit(event, data);
+  }
+
+  // Пример: новый заказ
+  notifyNewOrder(shopOwnerId: string, orderId: string) {
+    this.sendNotification(shopOwnerId, 'new_order', {
+      order_id: orderId,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Пример: изменился статус заказа
+  notifyOrderStatusChanged(
+    userId: string,
+    orderId: string,
+    newStatus: string,
+  ) {
+    this.sendNotification(userId, 'order_status_changed', {
+      order_id: orderId,
+      status: newStatus,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+```
+
+**Клиентская часть (React):**
+
+```typescript
+// hooks/useNotifications.ts
+export function useNotifications() {
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+
+  useEffect(() => {
+    const ws = new WebSocket('wss://your-api.com/ws/notifications');
+
+    ws.onopen = () => {
+      console.log('Connected to notifications');
+    };
+
+    ws.onmessage = (event) => {
+      const { event: type, data } = JSON.parse(event.data);
+      
+      // Обработка событий
+      switch (type) {
+        case 'new_order':
+          // Показать push-уведомление, обновить дашборд
+          showNotification('Новый заказ!', `Заказ ${data.order_id}`);
+          refetchDashboard();
+          break;
+        case 'order_status_changed':
+          showNotification('Статус заказа изменён', `Заказ ${data.order_id}: ${data.status}`);
+          refetchOrders();
+          break;
+        case 'low_stock':
+          showNotification('Низкий остаток', `Товар ${data.product_name} < 5 шт`);
+          break;
+      }
+    };
+
+    setSocket(ws);
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
+  return { socket };
+}
+```
+
+**События (events):**
+- `new_order` — новый заказ (для продавца)
+- `order_status_changed` — изменился статус заказа (для клиента и продавца)
+- `payment_received` — оплата получена (для продавца)
+- `low_stock` — остаток товара < минимального (для продавца)
+- `review_received` — новый отзыв (если есть плагин)
+
+***
+
+### 4.5 Кэширование и оптимизация
+
+**Redis для кэширования:**
+
+```typescript
+// analytics.service.ts
+async getDashboard(shopId: string) {
+  const cacheKey = `dashboard:${shopId}`;
+  
+  // Проверяем кэш (5 минут)
+  const cached = await this.redis.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+  
+  // Считаем агрегации
+  const data = await this.calculateDashboardMetrics(shopId);
+  
+  // Сохраняем в кэш
+  await this.redis.setex(cacheKey, 300, JSON.stringify(data));
+  
+  return data;
+}
+```
+
+**Ключи кэша:**
+- `dashboard:{shopId}` — 5 минут
+- `products:{shopId}:{page}:{filters}` — 5 минут
+- `product:{id}` — 1 минута (для остатков)
+- `analytics:products:{shopId}` — 15 минут
+
+**Инвалидация кэша:**
+- При изменении товара →
+
+## Итерация 6/6: Дополнительные плагины, безопасность, развёртывание и roadmap
+
+***
+
+### 5.7 Дополнительные плагины (Premium/Ultra)
+
+**1. Отзывы и рейтинги (Premium)**
+
+**Функции:**
+- Виджет отзывов на карточке товара (звёзды, текст, фото от клиентов)
+- Модерация: премодерация / постмодерация, фильтр по словам
+- Ответы продавца на отзывы (публично)
+- Стимулирование: бонусные баллы за отзыв с фото
+- Виджет «Топ отзывов» на главной
+
+**API:**
+```typescript
+// POST /api/reviews
+{
+  product_id: "uuid",
+  customer_id: "uuid",
+  rating: 5,
+  title: "Отличный товар!",
+  text: "Пользуюсь 2 недели, всё нравится",
+  images: ["url1", "url2"],
+  is_moderated: false,
+}
+
+// GET /api/products/:id/reviews?rating=5&sort=newest
+{
+  total: 125,
+  avg_rating: 4.6,
+  reviews: [...]
+}
+```
+
+**Монетизация:** ¥499/мес (~$7) или ¥4,999/год (~$75)
+
+***
+
+**2. 360° просмотр и AR (Ultra)**
+
+**Функции:**
+- Загрузка 360° фото (серия снимков, автосборка в плеер)
+- AR-примерка (для одежды/аксессуаров через камеру телефона)
+- 3D-модели товаров (GLB/GLTF форматы)
+
+**API:**
+```typescript
+// POST /api/products/:id/media/360
+{
+  images: ["url1", "url2", ..., "url36"],
+  auto_rotate: true,
+  zoom_enabled: true,
+}
+```
+
+**Монетизация:** ¥1,999/мес (~$30) или разовая покупка ¥19,999 (~$300)
+
+***
+
+**3. Кросс-селл и апсэлл (Premium)**
+
+**Функции:**
+- «Часто покупают вместе» (автоматически на основе истории заказов)
+- «Похожие товары» (ML-рекомендации)
+- «С этим товаром покупают» (ручная настройка)
+- Upsell в корзине: «Добавьте ещё на 1000₽ для бесплатной доставки»
+
+**API:**
+```typescript
+// GET /api/products/:id/recommendations
+{
+  frequently_bought_together: [...],
+  similar_products: [...],
+  cross_sell: [...],
+}
+```
+
+**Монетизация:** ¥799/мес (~$12) или ¥7,999/год (~$120)
+
+***
+
+**4. Подарочные карты и сертификаты (Premium)**
+
+**Функции:**
+- Генерация кодов (фиксированная сумма / произвольная)
+- Дизайн сертификата (конструктор)
+- Проверка баланса по коду
+- Ограничения: срок действия, категории товаров
+
+**API:**
+```typescript
+// POST /api/gift-cards
+{
+  code: "GIFT2026ABC",
+  amount: 5000,
+  expires_at: "2027-12-31",
+  is_active: true,
+}
+
+// POST /api/gift-cards/redeem
+{
+  code: "GIFT2026ABC",
+  order_id: "uuid",
+  amount_to_redeem: 3000,
+}
+```
+
+**Монетизация:** ¥699/мес (~$10) или ¥6,999/год (~$105)
+
+***
+
+**5. B2B и опт (Ultra)**
+
+**Функции:**
+- Оптовые цены (от количества: 1–10 шт = 100₽, 11–50 шт = 80₽)
+- Персональные прайсы для клиентов (по сегментам)
+- Запрос счёта (кнопка «Купить для юрлица»)
+- Отсрочка платежа (для проверенных B2B-клиентов)
+
+**API:**
+```typescript
+// POST /api/products/:id/tiers
+{
+  tiers: [
+    { min_qty: 1, max_qty: 10, price: 100 },
+    { min_qty: 11, max_qty: 50, price: 80 },
+    { min_qty: 51, price: 60 },
+  ]
+}
+```
+
+**Монетизация:** ¥2,999/мес (~$45) или ¥29,999/год (~$450)
+
+***
+
+### 6.1 Безопасность и комплаенс
+
+**1. Аутентификация и авторизация:**
+
+- **JWT-токены:** Короткоживущие (15 мин) + refresh-токены (7 дней)
+- **2FA для админов:** TOTP (Google Authenticator) или SMS
+- **Ролевая модель:**
+  - `owner` — полный доступ
+  - `admin` — всё кроме настроек магазина
+  - `manager` — товары + заказы
+  - `support` — только заказы + чаты
+  - `viewer` — только аналитика
+
+**2. Защита данных:**
+
+- **RLS (Row Level Security):** Каждый продавец видит только свои данные [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/a4772b9a-d8d1-45d3-8e94-94b62e82e100/MAXSCRM_Final_Stack_Verdict_MAS-Decision.pdf)
+- **Шифрование:**
+  - At rest: AES-256 для чувствительных полей (телефоны, email)
+  - In transit: TLS 1.3 для всех API-вызовов
+- **Маскирование:** В логах маскируются телефоны, email, токены
+
+**3. Аудит и логирование:**
+
+```sql
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  action VARCHAR(50) NOT NULL, -- create_product, update_order, ...
+  entity_type VARCHAR(50),
+  entity_id UUID,
+  old_value JSONB,
+  new_value JSONB,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**4. Соответствие регуляциям:**
+
+- **GDPR/152-ФЗ:**
+  - Чекбокс согласия на обработку данных (при оформлении заказа)
+  - Право на удаление данных (кнопка «Удалить аккаунт»)
+  - Экспорт данных клиента (JSON/CSV по запросу)
+- **Политика конфиденциальности:** Генератор шаблона в настройках магазина
+
+***
+
+### 6.2 Развёртывание и инфраструктура
+
+**1. Docker-контейнеризация:**
+
+```dockerfile
+# Dockerfile (backend)
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY dist ./dist
+EXPOSE 3000
+CMD ["node", "dist/main.js"]
+```
+
+```dockerfile
+# Dockerfile (frontend)
+FROM node:20-alpine as builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**2. Kubernetes (развёртывание):**
+
+```yaml
+# deployment.yaml (backend)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: shop-backend
+  template:
+    metadata:
+      labels:
+        app: shop-backend
+    spec:
+      containers:
+      - name: backend
+        image: your-registry/shop-backend:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-secret
+              key: url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: url
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+```
+
+**3. CI/CD (GitHub Actions):**
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - run: npm ci
+    - run: npm test
+    - run: npm run lint
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - run: docker build -t your-registry/shop-backend:latest .
+    - run: docker push your-registry/shop-backend:latest
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: azure/k8s-deploy@v4
+      with:
+        manifests: k8s/deployment.yaml
+        images: your-registry/shop-backend:latest
+```
+
+**4. Мониторинг:**
+
+- **Prometheus + Grafana:**
+  - Метрики: RPS, latency (p50/p95/p99), error rate, CPU/memory
+  - Дашборды: «Обзор магазина», «Производительность API», «Ошибки»
+- **Sentry:** Отслеживание ошибок frontend/backend
+- **Uptime-мониторинг:** Проверка доступности каждые 1 минуту (Alert: 3 неудачи подряд)
+
+***
+
+### 6.3 Roadmap развития (после MVP)
+
+**Месяц 1–2 (MVP):**
+- ✅ Core: каталог, корзина, заказы, админка, MAX Pay
+- ✅ Базовая аналитика
+- ✅ WebSocket-уведомления
+- 🚀 Запуск на 5–10 тестовых магазинах
+
+**Месяц 3–4 (Стабилизация):**
+- 🔧 Исправление багов по обратной связи
+- 📈 Оптимизация производительности (кэширование, индексы БД)
+- 🛡️ Security-аудит, penetration testing
+- 📚 Документация для продавцов (гайды, FAQ, видео)
+
+**Месяц 5–6 (Плагины v1):**
+- 🧩 CRM + продвинутая аналитика (первые 2 плагина)
+- 🧩 Email-маркетинг (интеграция с SendGrid/Mailgun)
+- 🧩 Отзывы и рейтинги
+- 🚀 Публичный запуск маркетплейса плагинов
+
+**Месяц 7–12 (Масштабирование):**
+- 🧩 Loyalty-программы, рефералка
+- 🧩 Интеграции (1C, службы доставки, маркетплейсы)
+- 🌍 Мультиязычность (RU/EN/CN)
+- 📱 PWA для магазина (офлайн-режим, push)
+- 🎯 A/B тесты для оптимизации конверсии
+
+***
+
+### 6.4 Чек-лист перед запуском (Go/No-Go)
+
+**Backend:**
+- [ ] Все API endpoints протестированы (unit + integration)
+- [ ] RLS-политики настроены и проверены
+- [ ] WebSocket работает (тест на 100+ одновременных подключений)
+- [ ] MAX Pay integration: test + production mode
+- [ ] Логирование и аудит включены
+- [ ] Резервное копирование БД настроено (ежедневно)
+
+**Frontend:**
+- [ ] Адаптивность (mobile, tablet, desktop)
+- [ ] Скорость загрузки <2 сек (Lighthouse score >90)
+- [ ] Обработка ошибок (404, 500, offline)
+- [ ] Доступность (a11y: контраст, клавиатурная навигация)
+- [ ] SEO (meta-теги, Open Graph, микроразметка)
+
+**Безопасность:**
+- [ ] HTTPS (TLS 1.3)
+- [ ] CSP (Content Security Policy)
+- [ ] Rate limiting (100 запросов/мин на пользователя)
+- [ ] 2FA для админов (опционально, но рекомендуется)
+- [ ] Penetration test проведён
+
+**Документация:**
+- [ ] Гайд для продавца: «Как создать первый товар»
+- [ ] Гайд: «Как обработать заказ»
+- [ ] FAQ (частые вопросы)
+- [ ] API-документация (Swagger/OpenAPI)
+
+***
+
+## **Итого: 6 итераций завершены**
+
+**Структура плана:**
+1. **Итерация 1:** Стратегия, архитектура, MVP-ядро
+2. **Итерация 2:** Детальная спецификация админ-панели
+3. **Итерация 3:** Фронтенд магазина (витрина, корзина, ЛК покупателя)
+4. **Итерация 4:** API, БД, MAX Pay, WebSocket
+5. **Итерация 5:** Платные плагины (CRM, аналитика, маркетинг, loyalty, интеграции)
+6. **Итерация 6:** Доп. пла
+
+## Итоговый план создания магазина в MAX (резюме 6 итераций)
+
+***
+
+### 📋 Сводная таблица функциональности
+
+| Модуль | Core (бесплатно) | Premium-плагины | Ultra-плагины |
+|--------|------------------|-----------------|---------------|
+| **Каталог товаров** | ✅ CRUD, категории, фото (5), поиск, фильтры, варианты | — | 360° просмотр, AR |
+| **Корзина и заказ** | ✅ Корзина, checkout (3 шага), MAX Pay | Кросс-селл в корзине | — |
+| **Админка** | ✅ Дашборд, товары, заказы, базовая аналитика, настройки | CRM, продвинутая аналитика, email-маркетинг | B2B/опт |
+| **ЛК покупателя** | ✅ Профиль, история заказов, уведомления, адреса | — | — |
+| **Аналитика** | ✅ Выручка, топ-товары, заказы (7/30/90 дней) | Кастомные дашборды, воронки, ABC, LTV, каналы | — |
+| **CRM** | — | ✅ Сегментация, карточка клиента, триггеры, заметки | — |
+| **Маркетинг** | — | ✅ Промокоды, email-рассылки, push, ретаргетинг | — |
+| **Loyalty** | — | ✅ Баллы, уровни, достижения, рефералка | — |
+| **Отзывы** | — | ✅ Рейтинги, модерация, ответы продавца | — |
+| **Интеграции** | ✅ MAX Pay, базовые уведомления | 1C, службы доставки, маркетплейсы, GA4, Telegram | — |
+| **B2B** | — | — | ✅ Оптовые цены, прайсы, отсрочка |
+| **360°/AR** | — | — | ✅ 360° фото, AR-примерка, 3D-модели |
+
+***
+
+### 🏗️ Архитектурная схема
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     MAX Messenger                           │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │              Mini-App Store (React)                   │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐            │  │
+│  │  │ Витрина  │  │ Корзина  │  │  ЛК      │            │  │
+│  │  └──────────┘  └──────────┘  └──────────┘            │  │
+│  │                                                       │  │
+│  │  ┌──────────────────────────────────────────────────┐ │  │
+│  │  │           Plugin Container (iframe/V8)           │ │  │
+│  │  │  [CRM] [Analytics] [Marketing] [Loyalty] ...     │ │  │
+│  │  └──────────────────────────────────────────────────┘ │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   API Gateway (NestJS)                      │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │  Shop    │  │ Product  │  │  Order   │  │ Payment  │   │
+│  │  Module  │  │  Module  │  │  Module  │  │  Module  │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
+│  │ Analytics│  │   CRM    │  │ Marketing│  │  Plugin  │   │
+│  │  Module  │  │  Module  │  │  Module  │  │  Loader  │   │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  PostgreSQL (RLS + Multi-tenant)            │
+│  [shops] [products] [orders] [customers] [analytics] ...    │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│         Redis (Cache)    │    WebSocket (Notifications)     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+***
+
+### 💰 Модель монетизации (маркетплейс плагинов)
+
+| Плагин | Базовый | Про | Энтерпрайз |
+|--------|---------|-----|------------|
+| **CRM** | ¥999/мес<br>1,000 клиентов | ¥2,499/мес<br>10,000 клиентов | ¥4,999/мес<br>безлимит |
+| **Аналитика** | ¥1,499/мес<br>10K событий/день | ¥3,499/мес<br>100K событий/день | ¥6,999/мес<br>безлимит |
+| **Маркетинг** | ¥1,999/мес<br>5K email/мес | ¥4,999/мес<br>50K email/мес | ¥9,999/мес<br>безлимит |
+| **Loyalty** | ¥2,499/мес<br>1,000 клиентов | ¥4,999/мес<br>10,000 клиентов | ¥9,999/мес<br>безлимит |
+| **Интеграции** | ¥999/мес<br>1 интеграция | ¥2,499/мес<br>5 интеграций | ¥4,999/мес<br>все интеграции |
+| **Отзывы** | ¥499/мес | — | — |
+| **B2B/Опт** | — | — | ¥2,999/мес |
+| **360°/AR** | — | — | ¥1,999/мес |
+
+**Пакетные предложения:**
+- **Starter:** Core + CRM + Аналитика = ¥3,999/мес (−20%)
+- **Growth:** Core + CRM + Аналитика + Маркетинг = ¥6,999/мес (−25%)
+- **Pro:** Все плагины = ¥14,999/мес (−35%)
+
+**Revenue share для разработчиков плагинов:** 70/30 (разработчик/платформа) [bluevision-china](https://www.bluevision-china.com/leverage-the-global-rise-of-wechat-mini-programs-to-drive-your-business-growth/)
+
+***
+
+### 📅 Пошаговый план запуска (12 недель до MVP)
+
+| Неделя | Задачи | Результат |
+|--------|--------|-----------|
+| **1–2** | Проектирование БД, API-контракты, UI-макеты (Figma) | ✅ Spec-документ, ✅ макеты админки и витрины |
+| **3–4** | Backend: модули Shop, Product, Order, Auth | ✅ REST API для Core, ✅ RLS-политики |
+| **5–6** | Frontend: админка (дашборд, товары, заказы) | ✅ Рабочая админка (localhost) |
+| **7–8** | Frontend: витрина, корзина, checkout, ЛК покупателя | ✅ Полная воронка покупки |
+| **9** | Интеграция MAX Pay, WebSocket, кэширование | ✅ Оплата и уведомления работают |
+| **10** | Тестирование (unit, integration, e2e), багфикс | ✅ 95%+ покрытие тестами |
+| **11** | Нагрузочное тестирование, security-аудит | ✅ 1000 RPS, ✅ penetration test |
+| **12** | Деплой на staging, UAT с 3–5 тестовыми магазинами | ✅ Go/No-Go решение |
+
+***
+
+### 🎯 Следующий шаг
+
+**Рекомендую начать с:**
+
+1. **Создание Spec-документа (GATE 1 по процессу MAXSCRM) :**
+   - Детальное описание API endpoints (Swagger/OpenAPI)
+   - ER-диаграмма БД (dbdiagram.io или DrawSQL)
+   - UI-макеты в Figma (админка + витрина + checkout)
+
+2. **Прототипирование ядра (2 недели):**
+   - Backend: модули Shop + Product + Order (NestJS)
+   - Frontend: админка (дашборд + список товаров + форма товара)
+   - Тестовый магазин с 10–20 товарами
+
+3. **Первый демо-запуск (конец недели 2):**
+   - Презентация стейкхолдерам
+   - Сбор обратной связи
+   - Корректировка плана (если нужно)
+
+***
+
+**Готов приступить к детализации Spec-документа (API, БД, UI-макеты) или хочешь начать с другого блока?**
+
+## Детализация Spec-документа (GATE 1)
+
+Начинаю с полной спецификации API, схемы БД и ключевых UI-экранов.
+
+***
+
+## 📡 1. API Specification (OpenAPI 3.0)
+
+### 1.1 Аутентификация
+
+**Метод:** Bearer JWT  
+**Header:** `Authorization: Bearer <token>`
+
+**Токен содержит:**
+```json
+{
+  "sub": "user-uuid",
+  "shop_id": "shop-uuid",
+  "role": "owner|admin|manager|support",
+  "iat": 1722000000,
+  "exp": 1722000900
+}
+```
+
+***
+
+### 1.2 Shop Module
+
+#### `GET /api/shop/:id`
+
+**Описание:** Получить информацию о магазине
+
+**Response 200:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "owner_id": "user-uuid",
+  "name": "Мой Магазин",
+  "slug": "myshop",
+  "logo_url": "https://cdn.maxscrm.com/shops/550e8400/logo.png",
+  "description": "Лучшие товары для вас",
+  "settings": {
+    "currency": "RUB",
+    "timezone": "Europe/Moscow",
+    "language": "ru",
+    "contact_phone": "+79991234567",
+    "contact_email": "shop@example.com"
+  },
+  "is_active": true,
+  "created_at": "2026-01-15T10:00:00Z",
+  "updated_at": "2026-07-20T15:30:00Z"
+}
+```
+
+***
+
+#### `PUT /api/shop/:id`
+
+**Описание:** Обновить настройки магазина
+
+**Request Body:**
+```json
+{
+  "name": "Новое Название",
+  "description": "Обновлённое описание",
+  "settings": {
+    "contact_phone": "+79999999999",
+    "contact_email": "new@example.com"
+  }
+}
+```
+
+**Response 200:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Новое Название",
+  ...
+}
+```
+
+***
+
+#### `GET /api/shop/:id/dashboard`
+
+**Описание:** Дашборд с KPI и графиками
+
+**Query Params:**
+- `period`: `today|week|month|year|custom`
+- `from`: `YYYY-MM-DD` (если period=custom)
+- `to`: `YYYY-MM-DD` (если period=custom)
+
+**Response 200:**
+```json
+{
+  "kpi": {
+    "revenue_today": 125000,
+    "revenue_yesterday": 98000,
+    "revenue_change_percent": 27.55,
+    "orders_today": 45,
+    "orders_in_progress": 12,
+    "orders_completed": 128,
+    "avg_order_value": 10416.67,
+    "conversion_rate": 3.2
+  },
+  "revenue_chart": [
+    { "date": "2026-07-22", "revenue": 98000 },
+    { "date": "2026-07-23", "revenue": 112000 },
+    { "date": "2026-07-24", "revenue": 125000 }
+  ],
+  "top_products": [
+    {
+      "product_id": "prod-uuid-1",
+      "name": "Товар 1",
+      "units_sold": 25,
+      "revenue": 125000,
+      "stock": 48
+    },
+    {
+      "product_id": "prod-uuid-2",
+      "name": "Товар 2",
+      "units_sold": 18,
+      "revenue": 90000,
+      "stock": 12
+    }
+  ],
+  "recent_orders": [
+    {
+      "order_id": "order-uuid-1",
+      "created_at": "2026-07-24T14:30:00Z",
+      "customer_name": "Иван Иванов",
+      "total": 15000,
+      "status": "new"
+    },
+    {
+      "order_id": "order-uuid-2",
+      "created_at": "2026-07-24T13:15:00Z",
+      "customer_name": "Петр Петров",
+      "total": 8500,
+      "status": "processing"
+    }
+  ]
+}
+```
+
+***
+
+### 1.3 Product Module
+
+#### `GET /api/products`
+
+**Описание:** Список товаров с фильтрами и пагинацией
+
+**Query Params:**
+- `shop_id`: `uuid` (обязательно)
+- `category_id`: `uuid` (опционально)
+- `search`: `string` (поиск по названию/SKU)
+- `status`: `active|hidden|out_of_stock`
+- `min_price`: `number`
+- `max_price`: `number`
+- `page`: `number` (default: 1)
+- `limit`: `number` (default: 20, max: 100)
+- `sort`: `created_at|price|name|stock` (default: created_at)
+- `order`: `asc|desc` (default: desc)
+
+**Response 200:**
+```json
+{
+  "total": 156,
+  "page": 1,
+  "limit": 20,
+  "total_pages": 8,
+  "items": [
+    {
+      "id": "prod-uuid-1",
+      "shop_id": "shop-uuid",
+      "category_id": "cat-uuid-1",
+      "name": "Футболка базовая",
+      "sku": "TSH-001",
+      "price": 2500,
+      "old_price": 3000,
+      "stock": 150,
+      "status": "active",
+      "images": [
+        {
+          "url": "https://cdn.maxscrm.com/products/prod-uuid-1/img1.jpg",
+          "alt": "Футболка спереди",
+          "sort_order": 1
+        },
+        {
+          "url": "https://cdn.maxscrm.com/products/prod-uuid-1/img2.jpg",
+          "alt": "Футболка сзади",
+          "sort_order": 2
+        }
+      ],
+      "attributes": {
+        "color": "Белый",
+        "size": "M",
+        "material": "100% хлопок"
+      },
+      "created_at": "2026-07-10T09:00:00Z",
+      "updated_at": "2026-07-20T11:30:00Z"
+    },
+    ...
+  ]
+}
+```
+
+***
+
+#### `GET /api/products/:id`
+
+**Описание:** Детализация товара
+
+**Response 200:**
+```json
+{
+  "id": "prod-uuid-1",
+  "shop_id": "shop-uuid",
+  "category_id": "cat-uuid-1",
+  "name": "Футболка базовая",
+  "description": "<p>Классическая футболка из 100% хлопка...</p>",
+  "sku": "TSH-001",
+  "price": 2500,
+  "old_price": 3000,
+  "cost_price": 1200,
+  "stock": 150,
+  "min_stock": 10,
+  "status": "active",
+  "images": [
+    {
+      "url": "https://cdn.maxscrm.com/products/prod-uuid-1/img1.jpg",
+      "alt": "Футболка спереди",
+      "sort_order": 1
+    },
+    {
+      "url": "https://cdn.maxscrm.com/products/prod-uuid-1/img2.jpg",
+      "alt": "Футболка сзади",
+      "sort_order": 2
+    }
+  ],
+  "attributes": {
+    "color": "Белый",
+    "size": "M",
+    "material": "100% хлопок"
+  },
+  "variants": [
+    {
+      "id": "variant-uuid-1",
+      "sku": "TSH-001-S-WHT",
+      "price": 2500,
+      "stock": 50,
+      "attributes": {
+        "color": "Белый",
+        "size": "S"
+      }
+    },
+    {
+      "id": "variant-uuid-2",
+      "sku": "TSH-001-M-WHT",
+      "price": 2500,
+      "stock": 75,
+      "attributes": {
+        "color": "Белый",
+        "size": "M"
+      }
+    }
+  ],
+  "seo": {
+    "title": "Футболка базовая — купить в магазине MyShop",
+    "description": "Классическая футболка из 100% хлопка. Доступна в размерах S, M, L, XL."
+  },
+  "created_at": "2026-07-10T09:00:00Z",
+  "updated_at": "2026-07-20T11:30:00Z"
+}
+```
+
+***
+
+#### `POST /api/products`
+
+**Описание:** Создать товар
+
+**Request Body:**
+```json
+{
+  "shop_id": "shop-uuid",
+  "category_id": "cat-uuid-1",
+  "name": "Футболка базовая",
+  "description": "<p>Классическая футболка из 100% хлопка...</p>",
+  "sku": "TSH-001",
+  "price": 2500,
+  "old_price": 3000,
+  "cost_price": 1200,
+  "stock": 150,
+  "min_stock": 10,
+  "status": "active",
+  "images": [
+    {
+      "url": "https://cdn.maxscrm.com/products/prod-uuid-1/img1.jpg",
+      "alt": "Футболка спереди",
+      "sort_order": 1
+    }
+  ],
+  "attributes": {
+    "color": "Белый",
+    "size": "M",
+    "material": "100% хлопок"
+  },
+  "variants": [
+    {
+      "sku": "TSH-001-S-WHT",
+      "price": 2500,
+      "stock": 50,
+      "attributes": {
+        "color": "Белый",
+        "size": "S"
+      }
+    }
+  ],
+  "seo": {
+    "title": "Футболка базовая — купить в магазине MyShop",
+    "description": "Классическая футболка из 100% хлопка."
+  }
+}
+```
+
+**Response 201:**
+```json
+{
+  "id": "prod-new-uuid",
+  "name": "Футболка базовая",
+  ...
+}
+```
+
+***
+
+#### `PUT /api/products/:id`
+
+**Описание:** Обновить товар (частичное или полное обновление)
+
+**Request Body:** (как в POST, но все поля опциональны)
+
+**Response 200:**
+```json
+{
+  "id": "prod-uuid-1",
+  "name": "Футболка базовая (обновлённая)",
+  "price": 2300,
+  ...
+}
+```
+
+***
+
+#### `DELETE /api/products/:id`
+
+**Описание:** Удалить товар (или архивировать, если есть заказы)
+
+**Response 204:** No Content
+
+***
+
+#### `POST /api/products/bulk`
+
+**Описание:** Массовое создание/обновление товаров
+
+**Request Body:**
+```json
+{
+  "action": "create|update",
+  "items": [
+    {
+      "sku": "TSH-001",
+      "name": "Футболка 1",
+      "price": 2500,
+      "stock": 100
+    },
+    {
+      "sku": "TSH-002",
+      "name": "Футболка 2",
+      "price": 2700,
+      "stock": 80
+    }
+  ]
+}
+```
+
+**Response 200:**
+```json
+{
+  "created": 2,
+  "updated": 0,
+  "failed": 0,
+  "errors": []
+}
+```
+
+***
+
+#### `POST /api/products/:id/variants`
+
+**Описание:** Добавить варианты товара
+
+**Request Body:**
+```json
+{
+  "variants": [
+    {
+      "sku": "TSH-001-S-WHT",
+      "price": 2500,
+      "stock": 50,
+      "attributes": {
+        "color": "Белый",
+        "size": "S"
+      }
+    },
+    {
+      "sku": "TSH-001-M-WHT",
+      "price": 2500,
+      "stock": 75,
+      "attributes": {
+        "color": "Белый",
+        "size": "M"
+      }
+    }
+  ]
+}
+```
+
+**Response 201:**
+```json
+{
+  "variants": [
+    {
+      "id": "variant-uuid-1",
+      "sku": "TSH-001-S-WHT",
+      ...
+    },
+    {
+      "id": "variant-uuid-2",
+      "sku": "TSH-001-M-WHT",
+      ...
+    }
+  ]
+}
+```
+
+***
+
+### 1.4 Order Module
+
+#### `GET /api/orders`
+
+**Описание:** Список заказов с фильтрами
+
+**Query Params:**
+- `shop_id`: `uuid` (обязательно)
+- `status`: `new|processing|shipped|delivered|cancelled|refund`
+- `payment_status`: `pending|paid|refunded`
+- `delivery_type`: `courier|pickup|post`
+- `from`: `YYYY-MM-DD`
+- `to`: `YYYY-MM-DD`
+- `search`: `string` (по № заказа, имени, телефону)
+- `page`: `number` (default: 1)
+- `limit`: `number` (default: 20)
+
+**Response 200:**
+```json
+{
+  "total": 89,
+  "page": 1,
+  "limit": 20,
+  "items": [
+    {
+      "id": "order-uuid-1",
+      "order_number": "ORD-2026-000125",
+      "shop_id": "shop-uuid",
+      "customer_id": "cust-uuid-1",
+      "customer_name": "Иван Иванов",
+      "customer_phone": "+79991234567",
+      "customer_email": "ivan@example.com",
+      "status": "new",
+      "total": 15000,
+      "discount": 0,
+      "delivery_cost": 0,
+      "delivery_type": "courier",
+      "payment_method": "max_pay",
+      "payment_status": "pending",
+      "items_count": 3,
+      "created_at": "2026-07-24T14:30:00Z"
+    },
+    ...
+  ]
+}
+```
+
+***
+
+#### `GET /api/orders/:id`
+
+**Описание:** Детализация заказа
+
+**Response 200:**
+```json
+{
+  "id": "order-uuid-1",
+  "order_number": "ORD-2026-000125",
+  "shop_id": "shop-uuid",
+  "customer_id": "cust-uuid-1",
+  "customer_name": "Иван Иванов",
+  "customer_phone": "+79991234567",
+  "customer_email": "ivan@example.com",
+  "status": "new",
+
+```json
+{
+  "id": "order-uuid-1",
+  "order_number": "ORD-2026-000125",
+  "shop_id": "shop-uuid",
+  "customer_id": "cust-uuid-1",
+  "customer_name": "Иван Иванов",
+  "customer_phone": "+79991234567",
+  "customer_email": "ivan@example.com",
+  "status": "new",
+  "total": 15000,
+  "discount": 0,
+  "delivery_cost": 0,
+  "delivery_type": "courier",
+  "delivery_address": {
+    "street": "ул. Ленина",
+    "building": "10",
+    "flat": "25",
+    "entrance": "1",
+    "floor": "3",
+    "comment": "Домофон 25"
+  },
+  "payment_method": "max_pay",
+  "payment_status": "pending",
+  "payment_transaction_id": null,
+  "tracking_number": null,
+  "items": [
+    {
+      "id": "item-uuid-1",
+      "product_id": "prod-uuid-1",
+      "variant_id": "variant-uuid-2",
+      "name": "Футболка базовая",
+      "variant_name": "M / Белый",
+      "price": 2500,
+      "quantity": 2,
+      "total": 5000
+    },
+    {
+      "id": "item-uuid-2",
+      "product_id": "prod-uuid-2",
+      "variant_id": null,
+      "name": "Джинсы классические",
+      "variant_name": null,
+      "price": 5000,
+      "quantity": 2,
+      "total": 10000
+    }
+  ],
+  "notes": "Клиент просил позвонить за час до доставки",
+  "history": [
+    {
+      "status": "new",
+      "changed_at": "2026-07-24T14:30:00Z",
+      "changed_by": "system"
+    }
+  ],
+  "created_at": "2026-07-24T14:30:00Z",
+  "updated_at": "2026-07-24T14:30:00Z"
+}
+```
+
+***
+
+#### `POST /api/orders`
+
+**Описание:** Создать заказ (оформление заказа покупателем)
+
+**Request Body:**
+```json
+{
+  "shop_id": "shop-uuid",
+  "customer_id": "cust-uuid-1",
+  "customer_name": "Иван Иванов",
+  "customer_phone": "+79991234567",
+  "customer_email": "ivan@example.com",
+  "items": [
+    {
+      "product_id": "prod-uuid-1",
+      "variant_id": "variant-uuid-2",
+      "quantity": 2
+    },
+    {
+      "product_id": "prod-uuid-2",
+      "variant_id": null,
+      "quantity": 2
+    }
+  ],
+  "delivery_type": "courier",
+  "delivery_address": {
+    "street": "ул. Ленина",
+    "building": "10",
+    "flat": "25",
+    "entrance": "1",
+    "floor": "3",
+    "comment": "Домофон 25"
+  },
+  "payment_method": "max_pay",
+  "promo_code": "SUMMER20"
+}
+```
+
+**Response 201:**
+```json
+{
+  "id": "order-uuid-1",
+  "order_number": "ORD-2026-000125",
+  "total": 15000,
+  "status": "new",
+  "payment_url": "https://pay.maxscrm.com/checkout/order-uuid-1"
+}
+```
+
+***
+
+#### `PUT /api/orders/:id/status`
+
+**Описание:** Изменить статус заказа
+
+**Request Body:**
+```json
+{
+  "status": "processing",
+  "notify_customer": true,
+  "internal_note": "Менеджер подтвердил наличие"
+}
+```
+
+**Response 200:**
+```json
+{
+  "id": "order-uuid-1",
+  "status": "processing",
+  "updated_at": "2026-07-24T15:00:00Z",
+  "notification_sent": true
+}
+```
+
+***
+
+#### `POST /api/orders/:id/cancel`
+
+**Описание:** Отменить заказ
+
+**Request Body:**
+```json
+{
+  "reason": "Клиент передумал",
+  "notify_customer": true,
+  "refund": true
+}
+```
+
+**Response 200:**
+```json
+{
+  "id": "order-uuid-1",
+  "status": "cancelled",
+  "refund_id": "refund-uuid-1",
+  "refund_status": "pending"
+}
+```
+
+***
+
+#### `GET /api/orders/:id/invoice`
+
+**Описание:** Скачать накладную (PDF)
+
+**Response 200:** `application/pdf` (файл)
+
+***
+
+### 1.5 Cart Module
+
+#### `GET /api/cart/:user_id`
+
+**Описание:** Получить корзину пользователя
+
+**Response 200:**
+```json
+{
+  "id": "cart-uuid-1",
+  "user_id": "cust-uuid-1",
+  "shop_id": "shop-uuid",
+  "items": [
+    {
+      "id": "cart-item-uuid-1",
+      "product_id": "prod-uuid-1",
+      "variant_id": "variant-uuid-2",
+      "name": "Футболка базовая",
+      "variant_name": "M / Белый",
+      "price": 2500,
+      "quantity": 2,
+      "total": 5000,
+      "image_url": "https://cdn.maxscrm.com/products/prod-uuid-1/img1.jpg"
+    },
+    {
+      "id": "cart-item-uuid-2",
+      "product_id": "prod-uuid-2",
+      "variant_id": null,
+      "name": "Джинсы классические",
+      "variant_name": null,
+      "price": 5000,
+      "quantity": 1,
+      "total": 5000,
+      "image_url": "https://cdn.maxscrm.com/products/prod-uuid-2/img1.jpg"
+    }
+  ],
+  "subtotal": 10000,
+  "discount": 0,
+  "total": 10000,
+  "updated_at": "2026-07-24T14:00:00Z"
+}
+```
+
+***
+
+#### `POST /api/cart/:user_id/items`
+
+**Описание:** Добавить товар в корзину
+
+**Request Body:**
+```json
+{
+  "product_id": "prod-uuid-1",
+  "variant_id": "variant-uuid-2",
+  "quantity": 2
+}
+```
+
+**Response 201:**
+```json
+{
+  "cart_id": "cart-uuid-1",
+  "item_id": "cart-item-uuid-3",
+  "quantity": 2,
+  "total_items": 3,
+  "cart_total": 15000
+}
+```
+
+***
+
+#### `PUT /api/cart/:user_id/items/:item_id`
+
+**Описание:** Изменить количество товара в корзине
+
+**Request Body:**
+```json
+{
+  "quantity": 3
+}
+```
+
+**Response 200:**
+```json
+{
+  "item_id": "cart-item-uuid-1",
+  "quantity": 3,
+  "total": 7500,
+  "cart_total": 17500
+}
+```
+
+***
+
+#### `DELETE /api/cart/:user_id/items/:item_id`
+
+**Описание:** Удалить товар из корзины
+
+**Response 204:** No Content
+
+***
+
+### 1.6 Payment Module
+
+#### `POST /api/payment/initiate`
+
+**Описание:** Инициализировать оплату через MAX Pay
+
+**Request Body:**
+```json
+{
+  "order_id": "order-uuid-1",
+  "user_id": "cust-uuid-1",
+  "return_url": "https://myshop.maxscrm.com/order/order-uuid-1/success"
+}
+```
+
+**Response 200:**
+```json
+{
+  "payment_id": "pay-uuid-1",
+  "payment_url": "https://pay.maxscrm.com/checkout/pay-uuid-1",
+  "transaction_id": "txn-2026-000125"
+}
+```
+
+***
+
+#### `POST /api/payment/callback`
+
+**Описание:** Колбэк от MAX Pay (webhook)
+
+**Request Body:**
+```json
+{
+  "payment_id": "pay-uuid-1",
+  "order_id": "order-uuid-1",
+  "transaction_id": "txn-2026-000125",
+  "status": "success",
+  "amount": 15000,
+  "currency": "RUB",
+  "paid_at": "2026-07-24T14:35:00Z",
+  "signature": "hmac-sha256-signature-here"
+}
+```
+
+**Response 200:**
+```json
+{
+  "status": "ok"
+}
+```
+
+***
+
+#### `POST /api/payment/refund`
+
+**Описание:** Возврат средств
+
+**Request Body:**
+```json
+{
+  "order_id": "order-uuid-1",
+  "amount": 15000,
+  "reason": "Клиент вернул товар"
+}
+```
+
+**Response 200:**
+```json
+{
+  "refund_id": "refund-uuid-1",
+  "status": "pending",
+  "estimated_completion": "2026-07-29T00:00:00Z"
+}
+```
+
+***
+
+### 1.7 Analytics Module
+
+#### `GET /api/analytics/overview`
+
+**Описание:** Общая аналитика магазина
+
+**Query Params:**
+- `shop_id`: `uuid` (обязательно)
+- `from`: `YYYY-MM-DD`
+- `to`: `YYYY-MM-DD`
+
+**Response 200:**
+```json
+{
+  "revenue": {
+    "total": 1250000,
+    "avg_daily": 41666.67,
+    "growth_percent": 15.3
+  },
+  "orders": {
+    "total": 125,
+    "avg_daily": 4.17,
+    "growth_percent": 8.7
+  },
+  "avg_order_value": 10000,
+  "conversion_rate": 3.2,
+  "top_products": [
+    {
+      "product_id": "prod-uuid-1",
+      "name": "Футболка базовая",
+      "units_sold": 50,
+      "revenue": 125000
+    }
+  ],
+  "traffic": {
+    "sessions": 12500,
+    "visitors": 8900,
+    "bounce_rate": 42.5
+  }
+}
+```
+
+***
+
+#### `GET /api/analytics/products`
+
+**Описание:** Аналитика по товарам
+
+**Response 200:**
+```json
+{
+  "products": [
+    {
+      "product_id": "prod-uuid-1",
+      "name": "Футболка базовая",
+      "views": 1250,
+      "cart_additions": 180,
+      "purchases": 95,
+      "conversion_rate": 7.6,
+      "revenue": 237500,
+      "stock": 150,
+      "margin": 65.2
+    }
+  ],
+  "abc_analysis": {
+    "a_group": [
+      {
+        "product_id": "prod-uuid-1",
+        "revenue_share": 35
+      }
+    ],
+    "b_group": [...],
+    "c_group": [...]
+  }
+}
+```
+
+***
+
+#### `GET /api/analytics/customers`
+
+**Описание:** Аналитика по клиентам
+
+**Response 200:**
+```json
+{
+  "total_customers": 890,
+  "new_customers": 125,
+  "returning_customers": 765,
+  "returning_rate": 85.9,
+  "top_customers": [
+    {
+      "customer_id": "cust-uuid-1",
+      "name": "Иван Иванов",
+      "total_orders": 12,
+      "total_spent": 125000,
+      "avg_order_value": 10416.67
+    }
+  ],
+  "rfm_segments": {
+    "champions": 45,
+    "loyal": 120,
+    "potential_loyalists": 200,
+    "at_risk": 150,
+    "churned": 375
+  }
+}
+```
+
+***
+
+### 1.8 Notification Module (WebSocket)
+
+**Endpoint:** `wss://api.maxscrm.com/ws/notifications`
+
+**События от сервера:**
+
+```json
+// new_order
+{
+  "event": "new_order",
+  "data": {
+    "order_id": "order-uuid-1",
+    "order_number": "ORD-2026-000125",
+    "total": 15000,
+    "customer_name": "Иван Иванов",
+    "timestamp": "2026-07-24T14:30:00Z"
+  }
+}
+
+// order_status_changed
+{
+  "event": "order_status_changed",
+  "data": {
+    "order_id": "order-uuid-1",
+    "old_status": "new",
+    "new_status": "processing",
+    "timestamp": "2026-07-24T15:00:00Z"
+  }
+}
+
+// payment_received
+{
+  "event": "payment_received",
+  "data": {
+    "order_id": "order-uuid-1",
+    "amount": 15000,
+    "transaction_id": "txn-2026-000125",
+    "timestamp": "2026-07-24T14:35:00Z"
+  }
+}
+
+// low_stock
+{
+  "event": "low_stock",
+  "data": {
+    "product_id": "prod-uuid-1",
+    "product_name": "Футболка базовая",
+    "current_stock": 8,
+    "min_stock": 10,
+    "timestamp": "2026-07-24T10:00:00Z"
+  }
+}
+```
+
+***
+
+## 🗄️ 2. Полная схема базы данных (PostgreSQL)
+
+### 2.1 DDL для всех таблиц
+
+```sql
+-- ==================== SHOPS ====================
+CREATE TABLE shops (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_id UUID NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  logo_url TEXT,
+  description TEXT,
+  settings_json JSONB DEFAULT '{}',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_shops_owner_id ON shops(owner_id);
+CREATE INDEX idx_shops_slug ON shops(slug);
+
+-- ==================== CATEGORIES ====================
+CREATE TABLE categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  parent_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) NOT NULL,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_categories_shop_id ON categories(shop_id);
+CREATE INDEX idx_categories_parent_id ON categories(parent_id);
+
+-- ==================== PRODUCTS ====================
+CREATE TABLE products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  sku VARCHAR(100),
+  price DECIMAL(10,2) NOT NULL,
+  old_price DECIMAL(10,2),
+  cost_price DECIMAL(10,2),
+  stock INT DEFAULT 0,
+  min_stock INT DEFAULT 5,
+  status VARCHAR(20)
+```sql
+CREATE TABLE products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  sku VARCHAR(100),
+  price DECIMAL(10,2) NOT NULL,
+  old_price DECIMAL(10,2),
+  cost_price DECIMAL(10,2),
+  stock INT DEFAULT 0,
+  min_stock INT DEFAULT 5,
+  status VARCHAR(20) DEFAULT 'active',
+  images_json JSONB DEFAULT '[]',
+  attributes_json JSONB DEFAULT '{}',
+  seo_title VARCHAR(60),
+  seo_description VARCHAR(160),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_products_shop_id ON products(shop_id);
+CREATE INDEX idx_products_category_id ON products(category_id);
+CREATE INDEX idx_products_status ON products(status);
+CREATE INDEX idx_products_sku ON products(sku);
+
+-- ==================== PRODUCT VARIANTS ====================
+CREATE TABLE product_variants (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  sku VARCHAR(100),
+  price DECIMAL(10,2),
+  stock INT DEFAULT 0,
+  attributes_json JSONB NOT NULL,
+  images_json JSONB DEFAULT '[]',
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_variants_product_id ON product_variants(product_id);
+CREATE INDEX idx_variants_sku ON product_variants(sku);
+
+-- ==================== ORDERS ====================
+CREATE TABLE orders (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  customer_id UUID NOT NULL,
+  customer_name VARCHAR(255) NOT NULL,
+  customer_phone VARCHAR(20) NOT NULL,
+  customer_email VARCHAR(255),
+  status VARCHAR(20) DEFAULT 'new',
+  total DECIMAL(10,2) NOT NULL,
+  discount DECIMAL(10,2) DEFAULT 0,
+  delivery_cost DECIMAL(10,2) DEFAULT 0,
+  delivery_type VARCHAR(20) NOT NULL,
+  delivery_address_json JSONB,
+  payment_method VARCHAR(20) NOT NULL,
+  payment_status VARCHAR(20) DEFAULT 'pending',
+  payment_transaction_id VARCHAR(255),
+  tracking_number VARCHAR(100),
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_orders_shop_id ON orders(shop_id);
+CREATE INDEX idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX idx_orders_status ON orders(status);
+CREATE INDEX idx_orders_created_at ON orders(created_at);
+
+-- ==================== ORDER ITEMS ====================
+CREATE TABLE order_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  name VARCHAR(255) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  quantity INT NOT NULL,
+  total DECIMAL(10,2) NOT NULL
+);
+
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX idx_order_items_product_id ON order_items(product_id);
+
+-- ==================== ORDER HISTORY ====================
+CREATE TABLE order_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL,
+  changed_by VARCHAR(50),
+  changed_at TIMESTAMP DEFAULT NOW(),
+  note TEXT
+);
+
+CREATE INDEX idx_order_history_order_id ON order_history(order_id);
+
+-- ==================== CARTS ====================
+CREATE TABLE carts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_carts_user_id ON carts(user_id);
+CREATE INDEX idx_carts_shop_id ON carts(shop_id);
+
+-- ==================== CART ITEMS ====================
+CREATE TABLE cart_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cart_id UUID NOT NULL REFERENCES carts(id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_cart_items_cart_id ON cart_items(cart_id);
+CREATE INDEX idx_cart_items_product_id ON cart_items(product_id);
+
+-- ==================== SHOP SETTINGS ====================
+CREATE TABLE shop_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  key VARCHAR(100) NOT NULL,
+  value TEXT NOT NULL,
+  UNIQUE(shop_id, key)
+);
+
+CREATE INDEX idx_shop_settings_shop_id ON shop_settings(shop_id);
+
+-- ==================== NOTIFICATIONS ====================
+CREATE TABLE notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON notifications(is_read);
+
+-- ==================== CUSTOMERS (для CRM-плагина) ====================
+CREATE TABLE customers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  phone VARCHAR(20),
+  email VARCHAR(255),
+  total_orders INT DEFAULT 0,
+  total_spent DECIMAL(10,2) DEFAULT 0,
+  first_order_date TIMESTAMP,
+  last_order_date TIMESTAMP,
+  tags_json JSONB DEFAULT '[]',
+  notes TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_customers_shop_id ON customers(shop_id);
+CREATE INDEX idx_customers_user_id ON customers(user_id);
+
+-- ==================== PROMO CODES (для Marketing-плагина) ====================
+CREATE TABLE promo_codes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  value DECIMAL(10,2) NOT NULL,
+  min_order_amount DECIMAL(10,2),
+  max_uses INT,
+  used_count INT DEFAULT 0,
+  max_uses_per_customer INT,
+  start_date TIMESTAMP,
+  end_date TIMESTAMP,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_promo_codes_shop_id ON promo_codes(shop_id);
+CREATE INDEX idx_promo_codes_code ON promo_codes(code);
+
+-- ==================== AUDIT LOGS ====================
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID NOT NULL,
+  user_id UUID NOT NULL,
+  action VARCHAR(50) NOT NULL,
+  entity_type VARCHAR(50),
+  entity_id UUID,
+  old_value JSONB,
+  new_value JSONB,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_logs_shop_id ON audit_logs(shop_id);
+CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
+
+-- ==================== RLS POLICIES ====================
+ALTER TABLE shops ENABLE ROW LEVEL SECURITY;
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE carts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cart_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promo_codes ENABLE ROW LEVEL SECURITY;
+
+-- Политика: продавец видит только свои данные
+CREATE POLICY shop_owner_policy ON shops
+  FOR ALL
+  USING (owner_id = current_setting('app.current_user_id')::uuid);
+
+CREATE POLICY product_shop_policy ON products
+  FOR ALL
+  USING (shop_id IN (
+    SELECT id FROM shops WHERE owner_id = current_setting('app.current_user_id')::uuid
+  ));
+
+CREATE POLICY order_shop_policy ON orders
+  FOR ALL
+  USING (shop_id IN (
+    SELECT id FROM shops WHERE owner_id = current_setting('app.current_user_id')::uuid
+  ));
+
+CREATE POLICY customer_shop_policy ON customers
+  FOR ALL
+  USING (shop_id IN (
+    SELECT id FROM shops WHERE owner_id = current_setting('app.current_user_id')::uuid
+  ));
+```
+
+***
+
+## 🎨 3. UI-макеты ключевых экранов (описание для Figma)
+
+### 3.1 Админка: Дашборд
+
+**Компоновка:**
+```
+┌────────────────────────────────────────────────────────────┐
+│  MAXSCRM Shop Admin          [Профиль ▼]  [Уведомления 🔔] │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  📊 Дашборд                     [7 дней ▼] [30 дней] [90]  │
+│                                                            │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐     │
+│  │ Выручка  │ │ Заказы   │ │ Средний  │ │ Конверсия│     │
+│  │ 125,000₽ │ │   45     │ │  чек     │ │   3.2%   │     │
+│  │  ▲ 27.5% │ │  ▲ 12%   │ │ 10,416₽  │ │  ▼ 0.5%  │     │
+│  │ сегодня  │ │ сегодня  │ │          │ │          │     │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘     │
+│                                                            │
+│  ┌─────────────────────────────┐  ┌────────────────────┐  │
+│  │  📈 Выручка по дням         │  │  🔥 Топ-5 товаров  │  │
+│  │                             │  │                    │  │
+│  │  [линейный график]          │  │  1. Товар 1        │  │
+│  │                             │  │     125,000₽       │  │
+│  │                             │  │  2. Товар 2        │  │
+│  │                             │  │     90,000₽        │  │
+│  │                             │  │  ...               │  │
+│  │                             │  │                    │  │
+│  └─────────────────────────────┘  └────────────────────┘  │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  📦 Последние заказы                                  │  │
+│  │                                                       │  │
+│  │  № заказа    │ Дата    │ Клиент    │ Сумма  │ Статус │  │
+│  │  ORD-000125  │ 14:30   │ И.Иванов  │ 15,000₽│ Новый  │  │
+│  │  ORD-000124  │ 13:15   │ П.Петров  │ 8,500₽ │ В раб. │  │
+│  │  ...         │         │           │        │        │  │
+│  │                                                       │  │
+│  │  [Показать все →]                                     │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Цветовая схема:**
+- Фон: `#F5F7FA`
+- Карточки: `#FFFFFF` с тенью `0 2px 4px rgba(0,0,0,0.08)`
+- Акцент (MAXSCRM brand): `#3B82F6`
+- Успех: `#10B981`, Ошибка: `#EF4444`, Предупреждение: `#F59E0B`
+
+**Шрифты:**
+- Заголовки: Inter SemiBold, 20–24px
+- Текст: Inter Regular, 14–16px
+- Цифры KPI: Inter Bold, 28–32px
+
+***
+
+### 3.2 Админка: Список товаров
+
+**Компоновка:**
+```
+┌────────────────────────────────────────────────────────────┐
+│  ← Назад  │  📦 Товары                          │ [+ Добавить]│
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌───────────────────┐  ┌──────────────────────────────┐   │
+│  │  🔍 Поиск...      │  │  [Фильтры ▼]  [Экспорт CSV]  │   │
+│  └───────────────────┘  └──────────────────────────────┘   │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ ☐ │ Фото │ Название │ Категория │ Цена │ Остаток │ ⋮ │  │
+│  ├───┼──────┼──────────┼───────────┼──────┼─────────┼───┤  │
+│  │ ☐ │ 🖼️   │ Футболка │ Одежда    │ 2500 │  150    │ ⋮ │  │
+│  │   │      │ базовая  │           │      │         │   │  │
+│  ├───┼──────┼──────────┼───────────┼──────┼─────────┼───┤  │
+│  │ ☐ │ 🖼️   │ Джинсы   │ Одежда    │ 5000 │   48    │ ⋮ │  │
+│  │   │      │ класс.   │           │      │         │   │  │
+│  └───┴──────┴──────────┴───────────┴──────┴─────────┴───┘  │
+│                                                            │
+│  Выбрано: 2  [Массовые действия ▼]                         │
+│                                                            │
+│  Страница: 1 из 8   [◀]  [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/0be49010-cd2c-4db7-8c7d-6f859391491a/16_MINI-APP-DEV-GUIDE.md)  [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/29278fa8-17fb-4d6b-ae14-d2da85f48428/17_MARKETPLACE-GUIDELINES.md)  [ppl-ai-file-upload.s3.amazonaws](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/collection_d90e489e-2a7a-498c-9ca7-5b5626e08cad/659c1dc4-9775-4614-941c-e1cb1bade2fb/18_DEVELOPMENT-WORKFLOW.md) ... [▶]                │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Фильтры (выпадающая панель):**
+- Категория: [древовидный селектор]
+- Статус: ☑ Активен ☐ Скрыт ☐ Нет в наличии
+- Цена: [1000] — [50000] ₽
+- Остаток:  —  шт
+- [Применить] [Сбросить]
+
+***
+
+### 3.3 Админка: Форма товара (создание/редактирование)
+
+**Компоновка:**
+```
+┌────────────────────────────────────────────────────────────┐
+│  ← Назад  │  ✏️ Товар: Футболка базовая       │ [Сохранить]│
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Основное  │  Цена и остатки  │  Фото  │  SEO  │     │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                            │
+│  ┌─────────────────────────┐  ┌─────────────────────────┐  │
+│  │  Название *             │  │  Артикул (SKU)          │  │
+│  │  [Футболка базовая    ] │  │  [TSH-001             ] │  │
+│  └─────────────────────────┘  └─────────────────────────┘  │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Категория *                                          │  │
+│  │  [Одежда → Футболки                        ▼]        │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Описание                                             │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  [B][I][U][📷][🔗]                            │  │  │
+│  │  │  ────────────────────────────────────────────  │  │  │
+│  │  │  Классическая футболка из 100% хлопка...      │  │  │
+│  │  │                                                │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                            │
+│  ┌─────────────────────────┐  ┌─────────────────────────
+

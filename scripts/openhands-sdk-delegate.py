@@ -12,7 +12,7 @@ import sys, os, time, argparse, json, re
 # ── CLI ──────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(description="OpenHands SDK delegate v1.36.1")
 parser.add_argument("task", nargs="?", help="Текст задачи")
-parser.add_argument("--fast", action="store_true", help="deepseek-v4-flash (быстро)")
+parser.add_argument("--fast", action="store_true", help="оставлен для совместимости: модель now одна — deepseek-v4.1-flash")
 parser.add_argument("--timeout", type=int, default=300, help="Таймаут в секундах")
 parser.add_argument("--workspace", default="/tmp/openhands-workspace", help="Рабочая директория")
 parser.add_argument("--no-browser", action="store_true", help="Отключить browser tools (быстрее старт)")
@@ -23,8 +23,12 @@ if not args.task:
     parser.print_help()
     sys.exit(1)
 
-MODEL = "deepseek/deepseek-v4-flash" if args.fast else "deepseek/deepseek-chat"
-LABEL = "v4-flash" if args.fast else "deepseek-chat"
+# Модель — deepseek-v4.1-flash из подписки OpenCode Go. Endpoint — локальный релей
+# zen-go-relay (:8012) → https://opencode.ai/zen/go/v1: подписка требует заголовок
+# x-opencode-session, который релей добавляет за клиента.
+MODEL = "openai/deepseek-v4.1-flash"
+LABEL = "deepseek-v4.1-flash (OpenCode Go)"
+ZEN_RELAY_BASE_URL = os.environ.get("ZEN_RELAY_BASE_URL", "http://127.0.0.1:8012/v1")
 os.environ.setdefault("OPENHANDS_SUPPRESS_BANNER", "1")
 
 # API key: из env или .env файла студии
@@ -47,7 +51,7 @@ from openhands.sdk import LLM, Conversation
 from openhands.sdk.security.confirmation_policy import NeverConfirm
 from openhands.tools.preset import get_default_agent
 
-llm = LLM(model=MODEL, api_key=API_KEY, base_url="https://api.deepseek.com")
+llm = LLM(model=MODEL, api_key=API_KEY, base_url=ZEN_RELAY_BASE_URL)
 agent = get_default_agent(llm=llm)
 
 conv = Conversation(agent=agent, workspace=args.workspace, max_iteration_per_run=args.max_iterations)

@@ -185,3 +185,6 @@ open-design/
 dsh/
 Ai/
 .venv-dsh/
+
+# Клон стороннего инструмента archify (наш — docs/archify, scripts/archify-diagram.sh)
+/archify/

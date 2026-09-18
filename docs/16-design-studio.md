@@ -25,8 +25,14 @@
 | OpenDesign daemon | http://127.0.0.1:7456 (фон) | daemon собран |
 | Web-UI OpenDesign | http://127.0.0.1:7456 (Next.js static export в apps/web/out) | — |
 
-Ключ: `DEEPSEEK_API_KEY` из ~/studio/.env (подхватывается автоматически).
-Модель: `DSH_MODEL=deepseek-v4-flash` (или deepseek-v4-pro).
+Ключи: `DEEPSEEK_API_KEY` и `OPENCODE_GO_API_KEY` из ~/studio/.env (подхватываются автоматически;
+файл-ключ `~/studio/.opencode-go-key.txt` перенесён в env и удалён 2026-09-18).
+Модель дизайн-агентов — `deepseek-v4.1-flash` (подписка OpenCode Go) через локальный релей
+`zen-go-relay` :8012; в конфиг-слоях dsh модель живёт как id, `DSH_MODEL` передаётся только
+переменной окружения при запуске. Откат на api.deepseek.com при исчерпании квоты Go — автоматически
+в релее (режим `auto`) или жёстко скриптом `~/studio/scripts/studio-model-switch.sh`. Единая карта
+модели и отката — навык herdr-integration, разделы «ЕДИНАЯ МОДЕЛЬ АГЕНТОВ» и «Переключение модели
+всей Студии» (здесь не дублируется).
 
 ## Проверка в чеклисте готовности
 
@@ -64,7 +70,7 @@ dsh plugin --profile open-design add ~/studio/dsh/open-design-dsh-runtime-<ver>.
 ```bash
 # Быстрая дизайн-задача (DeepSeek напрямую, файлы+команды)
 set -a; source ~/studio/.env; set +a
-DSH_MODEL=deepseek-v4-flash dsh --profile headless "сгенерируй landing по DESIGN.md"
+DSH_MODEL=deepseek-v4-flash-vision-exp dsh --profile headless "сгенерируй landing по DESIGN.md"
 
 # Из Hermes: делегатор (аналог holix-delegate.sh)
 ~/studio/.venv-dsh/bin/python ~/studio/scripts/dsh-delegate.py "задача" \
